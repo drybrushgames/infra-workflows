@@ -1,59 +1,58 @@
 name: Deploy (Reusable)
 
 on:
-  workflow_call:
-    inputs:
-      service:
-        description: 'Service name (e.g., menagerie)'
-        type: string
-        required: true
-      path:
-        description: 'Deployment path on server (e.g., /opt/menagerie)'
-        type: string
-        required: true
-      host:
-        description: 'Tailscale hostname (e.g., vps-0b87e710.tail751d97.ts.net)'
-        type: string
-        required: true
-    secrets: {}
-    outputs: {}
+  workflow_call: {}
 
 jobs:
   deploy:
+    # Use infra-workflows' own environment so we can read its secrets/vars centrally
+    environment: prod
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      # Bring up Tailscale on the runner (OIDC CI by default)
+      # Join tailnet using central OAuth client (Devices → Core: Write scope)
       - name: Tailscale up
         uses: tailscale/github-action@v2
         with:
-          tags: tag:ci
-          version: stable
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          stable
 
-      # Optional: allow no-op builds to pass
-      - name: Build
+      # Infer service name and path from the caller repo name
+      - name: Derive service + path
+        id: derive
+        run: |
+          REPO="${GITHUB_REPOSITORY#*/}"      # owner/repo -> repo
+          echo "service=$REPO" >> "$GITHUB_OUTPUT"
+          echo "path=/opt/$REPO" >> "$GITHUB_OUTPUT"
+
+      # Optional local build hook; lets repos keep a no-op Makefile
+      - name: Build (optional)
         run: make build || true
 
-      - name: Deploy over SSH
+      # Deploy over SSH as 'deploy' to the central host/path
+      - name: Deploy
         run: |
-          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
-            "bash -lc 'cd ${{ inputs.path }} && ./scripts/deploy.sh'"
+          ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+            "bash -lc 'cd ${{ steps.derive.outputs.path }} && ./scripts/deploy.sh'"
 
-      - name: Health check (prototype mode)
+      # Health check (prototype mode) - try service-specific ports
+      - name: Health check (optional)
         run: |
-          # Try different ports based on service
-          case "${{ inputs.service }}" in
+          case "${{ steps.derive.outputs.service }}" in
             "menagerie")
-              curl -fsS "http://${{ inputs.host }}:8080/health" || true
+              curl -fsS "http://${{ vars.OVH_HOST }}:8080/health" || true
               ;;
             "pirateplunder")
-              curl -fsS "http://${{ inputs.host }}:3001/health" || true
+              curl -fsS "http://${{ vars.OVH_HOST }}:3001/health" || true
               ;;
             "quietpm")
-              curl -fsS "http://${{ inputs.host }}:8000/health" || true
+              curl -fsS "http://${{ vars.OVH_HOST }}:8000/health" || true
               ;;
             *)
-              curl -fsS "http://${{ inputs.host }}:8080/health" || true
+              curl -fsS "http://${{ vars.OVH_HOST }}:8080/health" || true
               ;;
           esac
