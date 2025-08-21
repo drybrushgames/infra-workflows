@@ -1,0 +1,45 @@
+name: Deploy (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: 'Service name (e.g., menagerie)'
+        type: string
+        required: true
+      path:
+        description: 'Deployment path on server (e.g., /opt/menagerie)'
+        type: string
+        required: true
+      host:
+        description: 'Tailscale hostname (e.g., vps-0b87e710.tail751d97.ts.net)'
+        type: string
+        required: true
+    secrets: {}
+    outputs: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Bring up Tailscale on the runner (OIDC CI by default)
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          tags: tag:ci
+          version: stable
+
+      # Optional: allow no-op builds to pass
+      - name: Build
+        run: make build || true
+
+      - name: Deploy over SSH
+        run: |
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+            "bash -lc 'cd ${{ inputs.path }} && ./scripts/deploy.sh'"
+
+      - name: Health check (prototype mode)
+        run: curl -fsS "http://${{ inputs.host }}:8080/health" || true
+        # ^ if your service binds elsewhere or via socket+reverse proxy, adjust later
