@@ -18,10 +18,11 @@ jobs:
           tags:             tag:ci
           version:          stable
 
-      - name: Derive path
+      - name: Derive path and service
         id: derive
         run: |
           REPO="${GITHUB_REPOSITORY#*/}"
+          echo "service=$REPO" >> $GITHUB_OUTPUT
           echo "path=/opt/$REPO" >> $GITHUB_OUTPUT
 
       - name: Build (optional)
@@ -31,3 +32,105 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
             "bash -lc 'cd ${{ steps.derive.outputs.path }} && ./scripts/deploy.sh'"
+
+      - name: Debug Service Status
+        if: success()
+        continue-on-error: true
+        run: |
+          SERVICE="${{ steps.derive.outputs.service }}"
+          echo "=== Checking service status ==="
+          ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+            "sudo systemctl status ${SERVICE}.service || echo 'Could not get service status'"
+          echo -e "\n=== Basic service check ==="
+          ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+            "systemctl is-active ${SERVICE}.service || echo 'Service not active'"
+
+      - name: Health Check
+        if: success()
+        continue-on-error: true
+        run: |
+          sleep 10 # Wait for service to fully restart
+          SERVICE="${{ steps.derive.outputs.service }}"
+          case "$SERVICE" in
+            "menagerie")
+              curl -fsS "http://${{ vars.OVH_HOST }}:8080/health" || echo "Health check failed"
+              ;;
+            "pirateplunder") 
+              curl -fsS "http://${{ vars.OVH_HOST }}:3001/health" || echo "Health check failed"
+              ;;
+            "quietpm")
+              curl -fsS "http://${{ vars.OVH_HOST }}:8000/health" || echo "Health check failed"
+              ;;
+            *)
+              curl -fsS "http://${{ vars.OVH_HOST }}:8080/health" || echo "Health check failed"
+              ;;
+          esac
+
+      - name: Notify Discord on Success
+        if: success()
+        uses: Ilshidur/action-discord@0.3.2
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          args: '✅ Deployment to ${{ vars.OVH_HOST }} Succeeded! Service: ${{ steps.derive.outputs.service }} • Commit: ${{ github.sha }} by ${{ github.actor }}'
+
+      - name: Get Failure Details
+        if: failure()
+        run: |
+          SERVICE="${{ steps.derive.outputs.service }}"
+          echo "Getting service logs for Discord notification..."
+          
+          # Get service status and logs
+          STATUS=$(ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+            "sudo systemctl status ${SERVICE}.service --no-pager -l 2>/dev/null || echo 'Service status check failed'")
+          LOGS=$(ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+            "sudo journalctl -u ${SERVICE}.service --since '5 minutes ago' --no-pager 2>/dev/null || echo 'Could not get journalctl logs'")
+          
+          # Also try to get application logs if they exist
+          APP_LOGS=$(ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+            "ls -la ${{ steps.derive.outputs.path }}/logs/ 2>/dev/null && tail -10 ${{ steps.derive.outputs.path }}/logs/*.log 2>/dev/null || echo 'No app logs found'")
+          
+          # Truncate commit message to first 120 characters
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          COMMIT_TRUNCATED=$(echo "$COMMIT_MSG" | head -c 120)
+          if [ ${#COMMIT_MSG} -gt 120 ]; then
+            COMMIT_TRUNCATED="${COMMIT_TRUNCATED}..."
+          fi
+          
+          echo "COMMIT_TRUNCATED<<EOF" >> $GITHUB_ENV
+          echo "$COMMIT_TRUNCATED" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          
+          echo "SERVICE_STATUS<<EOF" >> $GITHUB_ENV
+          echo "$STATUS" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          
+          echo "SERVICE_LOGS<<EOF" >> $GITHUB_ENV
+          echo "$LOGS" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "--- Application Logs ---" >> $GITHUB_ENV
+          echo "$APP_LOGS" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Notify Discord on Failure
+        if: failure()
+        uses: Ilshidur/action-discord@0.3.2
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        with:
+          args: |
+            ❌ **Deployment Failed** to ${{ vars.OVH_HOST }}
+            **Service:** ${{ steps.derive.outputs.service }} • **Author:** ${{ github.actor }} • **Branch:** ${{ github.ref_name }}
+            **Commit:** ${{ env.COMMIT_TRUNCATED }}
+            
+            **Service Status:**
+            ```
+            ${{ env.SERVICE_STATUS }}
+            ```
+            
+            **Service Logs:**
+            ```
+            ${{ env.SERVICE_LOGS }}
+            ```
+            
+            **Details:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

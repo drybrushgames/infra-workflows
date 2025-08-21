@@ -104,6 +104,9 @@ All Tailscale and server configuration is managed in this `infra-workflows` repo
 4. SSH to `deploy@{OVH_HOST}`
 5. Executes `/opt/{service}/scripts/deploy.sh`
 6. Restarts systemd service
+7. **Debug service status** (systemctl checks)
+8. **Health check** on service port
+9. **Discord notifications** (success/failure with logs)
 
 ## Server Setup
 
@@ -171,6 +174,8 @@ Configure in Settings → Environments → `prod`:
 **Secrets:**
 - `TAILSCALE_OAUTH_CLIENT_ID`: OAuth client ID from Tailscale admin
 - `TAILSCALE_OAUTH_CLIENT_SECRET`: OAuth client secret from Tailscale admin
+- `SVC_DB_PASSWORD`: PostgreSQL password for `svc` user (used by provision workflow)
+- `DISCORD_WEBHOOK_URL`: Discord webhook for deployment notifications (optional)
 
 ### In Service Repositories
 
