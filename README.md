@@ -32,7 +32,7 @@ on:
 
 jobs:
   provision:
-    uses: nhillen/infra-workflows/.github/workflows/provision-reusable.yml@main
+    uses: drybrushgames/infra-workflows/.github/workflows/provision-reusable.yml@main
     with:
       type:  ${{ inputs.type }}
       mode:  ${{ inputs.mode }}
@@ -49,7 +49,7 @@ on:
 
 jobs:
   deploy:
-    uses: nhillen/infra-workflows/.github/workflows/deploy-reusable.yml@main
+    uses: drybrushgames/infra-workflows/.github/workflows/deploy-reusable.yml@main
 ```
 
 3. **Add required files** to your service repo:
