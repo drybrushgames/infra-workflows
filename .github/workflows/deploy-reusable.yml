@@ -41,5 +41,19 @@ jobs:
             "bash -lc 'cd ${{ inputs.path }} && ./scripts/deploy.sh'"
 
       - name: Health check (prototype mode)
-        run: curl -fsS "http://${{ inputs.host }}:8080/health" || true
-        # ^ if your service binds elsewhere or via socket+reverse proxy, adjust later
+        run: |
+          # Try different ports based on service
+          case "${{ inputs.service }}" in
+            "menagerie")
+              curl -fsS "http://${{ inputs.host }}:8080/health" || true
+              ;;
+            "pirateplunder")
+              curl -fsS "http://${{ inputs.host }}:3001/health" || true
+              ;;
+            "quietpm")
+              curl -fsS "http://${{ inputs.host }}:8000/health" || true
+              ;;
+            *)
+              curl -fsS "http://${{ inputs.host }}:8080/health" || true
+              ;;
+          esac
