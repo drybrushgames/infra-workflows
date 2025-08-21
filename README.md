@@ -14,7 +14,31 @@ This repository provides a **reusable deployment workflow** that automatically:
 
 ### For New Services
 
-1. **Create deployment workflow** in your service repo at `.github/workflows/deploy.yml`:
+1. **Create provision workflow** in your service repo at `.github/workflows/provision.yml`:
+
+```yaml
+name: Provision (one-time)
+on:
+  workflow_dispatch:
+    inputs:
+      type:
+        description: "node|go|python"
+        required: true
+        default: node
+      mode:
+        description: "tcp|socket (start with tcp)"
+        required: true
+        default: tcp
+
+jobs:
+  provision:
+    uses: nhillen/infra-workflows/.github/workflows/provision-reusable.yml@main
+    with:
+      type:  ${{ inputs.type }}
+      mode:  ${{ inputs.mode }}
+```
+
+2. **Create deployment workflow** in your service repo at `.github/workflows/deploy.yml`:
 
 ```yaml
 name: Deploy
@@ -28,13 +52,18 @@ jobs:
     uses: nhillen/infra-workflows/.github/workflows/deploy-reusable.yml@main
 ```
 
-2. **Add required files** to your service repo:
+3. **Add required files** to your service repo:
    - `Makefile` with `build` target (can be no-op)
    - `/health` endpoint (returns 200 OK)
 
-3. **Set up deployment script** on your server at `/opt/your-repo-name/scripts/deploy.sh`
+4. **Run provision workflow** (one-time):
+   - Go to Actions → Provision (one-time)
+   - Choose service type (node/go/python) and mode (tcp/socket)
+   - Click "Run workflow"
 
-That's it! Push to main branch to trigger deployment.
+5. **Deploy**: Push to main branch to trigger deployment.
+
+That's it! The provision workflow sets up everything on the server, then deployments are automatic.
 
 ### For Existing Services
 
@@ -58,13 +87,23 @@ All Tailscale and server configuration is managed in this `infra-workflows` repo
 - **Server Host**: `OVH_HOST` (Tailscale hostname)
 - **Environment**: `prod` environment in this repo
 
-### Deployment Flow
+### Provision Flow (One-Time)
+1. Run provision workflow from service repo Actions
+2. Connects to Tailscale and SSH to server
+3. Creates `/opt/{service}` directory structure
+4. Creates PostgreSQL database for the service
+5. Generates `.env` file with database connection
+6. Creates `scripts/deploy.sh` deployment script
+7. Installs systemd service (TCP or Unix socket mode)
+8. Optionally configures Caddy for socket mode
+
+### Deployment Flow (Every Push)
 1. Service repo pushes to `main`
 2. Calls reusable workflow from `infra-workflows`
 3. Workflow connects to Tailscale
 4. SSH to `deploy@{OVH_HOST}`
 5. Executes `/opt/{service}/scripts/deploy.sh`
-6. Health check on service port
+6. Restarts systemd service
 
 ## Server Setup
 

@@ -1,0 +1,187 @@
+name: Provision Service (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      service: { type: string, required: false, description: "Service name; defaults to caller repo name" }
+      type:    { type: string, required: true,  description: "node|go|python" }
+      mode:    { type: string, required: false, default: "tcp", description: "tcp|socket (default tcp)" }
+      repo:    { type: string, required: false, description: "Git URL; defaults to caller repo" }
+      port:    { type: string, required: false, default: "8080", description: "TCP port if mode=tcp" }
+
+jobs:
+  provision:
+    environment: prod
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          stable
+
+      - name: Derive inputs
+        id: derive
+        shell: bash
+        run: |
+          REPO="${{ inputs.repo }}"
+          if [ -z "$REPO" ]; then REPO="https://github.com/${GITHUB_REPOSITORY}.git"; fi
+          NAME="${{ inputs.service }}"
+          if [ -z "$NAME" ]; then NAME="${GITHUB_REPOSITORY#*/}"; fi
+          echo "repo=$REPO"   >> $GITHUB_OUTPUT
+          echo "name=$NAME"   >> $GITHUB_OUTPUT
+          echo "path=/opt/$NAME" >> $GITHUB_OUTPUT
+          echo "type=${{ inputs.type }}" >> $GITHUB_OUTPUT
+          echo "mode=${{ inputs.mode }}" >> $GITHUB_OUTPUT
+          echo "port=${{ inputs.port }}" >> $GITHUB_OUTPUT
+          echo "socket=/opt/$NAME/run/app.sock" >> $GITHUB_OUTPUT
+
+      - name: Ensure tools on server
+        run: |
+          ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+            "bash -lc 'sudo apt-get update -y >/dev/null && \
+                       command -v yq >/dev/null 2>&1 || { sudo apt-get install -y wget jq >/dev/null && \
+                         sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 && sudo chmod +x /usr/local/bin/yq; }'"
+
+      - name: Create dir, DB, .env and deploy.sh
+        run: |
+          ssh deploy@${{ vars.OVH_HOST }} "bash -lc '
+            set -euo pipefail
+            NAME=\"${{ steps.derive.outputs.name }}\"
+            PATHDIR=\"${{ steps.derive.outputs.path }}\"
+            MODE=\"${{ steps.derive.outputs.mode }}\"
+            TYPE=\"${{ steps.derive.outputs.type }}\"
+            PORT=\"${{ steps.derive.outputs.port }}\"
+            REPO=\"${{ steps.derive.outputs.repo }}\"
+
+            # dirs
+            sudo mkdir -p \"$PATHDIR\"/run \"$PATHDIR\"/logs \"$PATHDIR\"/scripts
+            sudo chown -R deploy:deploy \"$PATHDIR\"
+
+            # DB
+            sudo -u postgres psql <<SQL || true
+CREATE DATABASE \"$NAME\";
+GRANT ALL PRIVILEGES ON DATABASE \"$NAME\" TO svc;
+SQL
+
+            # .env
+            if [ ! -f \"$PATHDIR/.env\" ]; then
+              cat <<EENV | sudo tee \"$PATHDIR/.env\" >/dev/null
+DATABASE_URL=postgres://svc:${{ secrets.SVC_DB_PASSWORD }}@localhost:5432/${NAME}?sslmode=disable
+NODE_ENV=production
+PORT=${PORT}
+EENV
+              sudo chown deploy:deploy \"$PATHDIR/.env\"
+              sudo chmod 600 \"$PATHDIR/.env\"
+            fi
+
+            # deploy.sh
+            if [ ! -f \"$PATHDIR/scripts/deploy.sh\" ]; then
+              cat <<\"EDEP\" | sudo tee \"$PATHDIR/scripts/deploy.sh\" >/dev/null
+#!/usr/bin/env bash
+set -euo pipefail
+SERVICE=\"${NAME}\"
+ROOT=\"${PATHDIR}\"
+REPO=\"${REPO}\"
+
+if [ ! -d \"$ROOT/.git\" ]; then
+  git clone \"$REPO\" \"$ROOT\"
+fi
+
+git -C \"$ROOT\" fetch --all
+git -C \"$ROOT\" reset --hard origin/main
+
+make -C \"$ROOT\" build || true
+
+# Node deps if present
+if [ -f \"$ROOT/package.json\" ]; then
+  cd \"$ROOT\"
+  command -v pnpm >/dev/null 2>&1 && pnpm i --prod \
+    || npm ci --omit=dev \
+    || npm i --omit=dev
+fi
+
+sudo /usr/bin/systemctl restart ${NAME}.service || true
+echo \"Deploy OK for $SERVICE\"
+EDEP
+              sudo chown deploy:deploy \"$PATHDIR/scripts/deploy.sh\"
+              sudo chmod +x \"$PATHDIR/scripts/deploy.sh\"
+            fi
+          '"
+
+      - name: Install systemd unit (tcp or socket)
+        run: |
+          ssh deploy@${{ vars.OVH_HOST }} "bash -lc '
+            set -euo pipefail
+            NAME=\"${{ steps.derive.outputs.name }}\"
+            PATHDIR=\"${{ steps.derive.outputs.path }}\"
+            MODE=\"${{ steps.derive.outputs.mode }}\"
+            TYPE=\"${{ steps.derive.outputs.type }}\"
+            SOCKET=\"${{ steps.derive.outputs.socket }}\"
+            PORT=\"${{ steps.derive.outputs.port }}\"
+
+            case \"$TYPE\" in
+              node)
+                if [ \"$MODE\" = \"socket\" ]; then
+                  EXEC=\"/usr/bin/bash -lc \\\"mkdir -p ${PATHDIR}/run && node ${PATHDIR}/backend/server.js --socket ${SOCKET}\\\"\"
+                else
+                  EXEC=\"/usr/bin/bash -lc \\\"PORT=\\\${PORT:-$PORT} npm --prefix ${PATHDIR} start\\\"\"
+                fi
+                ;;
+              go)
+                if [ \"$MODE\" = \"socket\" ]; then
+                  EXEC=\"/usr/bin/bash -lc \\\"mkdir -p ${PATHDIR}/run && ${PATHDIR}/bin/server --socket ${SOCKET}\\\"\"
+                else
+                  EXEC=\"/usr/bin/bash -lc \\\"PORT=\\\${PORT:-$PORT} ${PATHDIR}/bin/server\\\"\"
+                fi
+                ;;
+              python)
+                if [ \"$MODE\" = \"socket\" ]; then
+                  EXEC=\"/usr/bin/bash -lc \\\"mkdir -p ${PATHDIR}/run && uvicorn app:app --uds ${SOCKET}\\\"\"
+                else
+                  EXEC=\"/usr/bin/bash -lc \\\"PORT=\\\${PORT:-$PORT} uvicorn app:app --host 0.0.0.0 --port \\$PORT\\\"\"
+                fi
+                ;;
+              *) echo Unknown type; exit 1;;
+            esac
+
+            UNIT=\"/etc/systemd/system/${NAME}.service\"
+            sudo tee \"$UNIT\" >/dev/null <<EOF
+[Unit]
+Description=$NAME
+After=network.target
+
+[Service]
+User=deploy
+WorkingDirectory=${PATHDIR}
+EnvironmentFile=${PATHDIR}/.env
+ExecStart=${EXEC}
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+            sudo /usr/bin/systemctl daemon-reload
+            sudo /usr/bin/systemctl enable --now ${NAME}.service || true
+          '"
+
+      - name: (socket mode only) Render simple Caddyfile and reload
+        if: inputs.mode == 'socket'
+        run: |
+          ssh deploy@${{ vars.OVH_HOST }} "bash -lc '
+            NAME=\"${{ steps.derive.outputs.name }}\"
+            SOCKET=\"${{ steps.derive.outputs.socket }}\"
+            # Minimal per-service caddy fragment
+            sudo tee /etc/caddy/Caddyfile >/dev/null <<ECF
+# generated
+${NAME}.local {
+  reverse_proxy unix//${SOCKET}
+}
+ECF
+            sudo /usr/bin/caddy reload
+          '"

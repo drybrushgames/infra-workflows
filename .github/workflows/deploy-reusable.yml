@@ -5,14 +5,11 @@ on:
 
 jobs:
   deploy:
-    # Use infra-workflows' own environment so we can read its secrets/vars centrally
     environment: prod
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
-      # Join tailnet using central OAuth client (Devices → Core: Write scope)
       - name: Tailscale up
         uses: tailscale/github-action@v2
         with:
@@ -21,38 +18,16 @@ jobs:
           tags:             tag:ci
           version:          stable
 
-      # Infer service name and path from the caller repo name
-      - name: Derive service + path
+      - name: Derive path
         id: derive
         run: |
-          REPO="${GITHUB_REPOSITORY#*/}"      # owner/repo -> repo
-          echo "service=$REPO" >> "$GITHUB_OUTPUT"
-          echo "path=/opt/$REPO" >> "$GITHUB_OUTPUT"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          echo "path=/opt/$REPO" >> $GITHUB_OUTPUT
 
-      # Optional local build hook; lets repos keep a no-op Makefile
       - name: Build (optional)
         run: make build || true
 
-      # Deploy over SSH as 'deploy' to the central host/path
-      - name: Deploy
+      - name: Deploy over SSH
         run: |
           ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
             "bash -lc 'cd ${{ steps.derive.outputs.path }} && ./scripts/deploy.sh'"
-
-      # Health check (prototype mode) - try service-specific ports
-      - name: Health check (optional)
-        run: |
-          case "${{ steps.derive.outputs.service }}" in
-            "menagerie")
-              curl -fsS "http://${{ vars.OVH_HOST }}:8080/health" || true
-              ;;
-            "pirateplunder")
-              curl -fsS "http://${{ vars.OVH_HOST }}:3001/health" || true
-              ;;
-            "quietpm")
-              curl -fsS "http://${{ vars.OVH_HOST }}:8000/health" || true
-              ;;
-            *)
-              curl -fsS "http://${{ vars.OVH_HOST }}:8080/health" || true
-              ;;
-          esac
