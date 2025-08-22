@@ -8,6 +8,7 @@ on:
       mode:    { type: string, required: false, default: "tcp", description: "tcp|socket (default tcp)" }
       repo:    { type: string, required: false, description: "Git URL; defaults to caller repo" }
       port:    { type: string, required: false, default: "8080", description: "TCP port if mode=tcp" }
+      host:    { type: string, required: false, default: "vps-0b87e710.tail751d97.ts.net", description: "OVH host" }
 
 jobs:
   provision:
@@ -41,14 +42,14 @@ jobs:
 
       - name: Ensure tools on server
         run: |
-          ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "bash -lc 'sudo apt-get update -y >/dev/null && \
                        command -v yq >/dev/null 2>&1 || { sudo apt-get install -y wget jq >/dev/null && \
                          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 && sudo chmod +x /usr/local/bin/yq; }'"
 
       - name: Create dir, DB, .env and deploy.sh
         run: |
-          ssh deploy@${{ vars.OVH_HOST }} "bash -lc '
+          ssh deploy@${{ inputs.host }} "bash -lc '
             set -euo pipefail
             NAME=\"${{ steps.derive.outputs.name }}\"
             PATHDIR=\"${{ steps.derive.outputs.path }}\"
@@ -114,7 +115,7 @@ EDEP
 
       - name: Install systemd unit (tcp or socket)
         run: |
-          ssh deploy@${{ vars.OVH_HOST }} "bash -lc '
+          ssh deploy@${{ inputs.host }} "bash -lc '
             set -euo pipefail
             NAME=\"${{ steps.derive.outputs.name }}\"
             PATHDIR=\"${{ steps.derive.outputs.path }}\"
@@ -172,7 +173,7 @@ EOF
       - name: (socket mode only) Render simple Caddyfile and reload
         if: inputs.mode == 'socket'
         run: |
-          ssh deploy@${{ vars.OVH_HOST }} "bash -lc '
+          ssh deploy@${{ inputs.host }} "bash -lc '
             NAME=\"${{ steps.derive.outputs.name }}\"
             SOCKET=\"${{ steps.derive.outputs.socket }}\"
             # Minimal per-service caddy fragment

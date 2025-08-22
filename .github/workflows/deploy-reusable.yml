@@ -1,7 +1,9 @@
 name: Deploy (Reusable)
 
 on:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      host: { type: string, required: false, default: "vps-0b87e710.tail751d97.ts.net", description: "OVH host" }
 
 jobs:
   deploy:
@@ -30,7 +32,7 @@ jobs:
 
       - name: Deploy over SSH
         run: |
-          ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "bash -lc 'cd ${{ steps.derive.outputs.path }} && ./scripts/deploy.sh'"
 
       - name: Debug Service Status
@@ -39,10 +41,10 @@ jobs:
         run: |
           SERVICE="${{ steps.derive.outputs.service }}"
           echo "=== Checking service status ==="
-          ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "sudo systemctl status ${SERVICE}.service || echo 'Could not get service status'"
           echo -e "\n=== Basic service check ==="
-          ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "systemctl is-active ${SERVICE}.service || echo 'Service not active'"
 
       - name: Health Check
@@ -53,16 +55,16 @@ jobs:
           SERVICE="${{ steps.derive.outputs.service }}"
           case "$SERVICE" in
             "menagerie")
-              curl -fsS "http://${{ vars.OVH_HOST }}:8080/health" || echo "Health check failed"
+              curl -fsS "http://${{ inputs.host }}:8080/health" || echo "Health check failed"
               ;;
             "pirateplunder") 
-              curl -fsS "http://${{ vars.OVH_HOST }}:3001/health" || echo "Health check failed"
+              curl -fsS "http://${{ inputs.host }}:3001/health" || echo "Health check failed"
               ;;
             "quietpm")
-              curl -fsS "http://${{ vars.OVH_HOST }}:8000/health" || echo "Health check failed"
+              curl -fsS "http://${{ inputs.host }}:8000/health" || echo "Health check failed"
               ;;
             *)
-              curl -fsS "http://${{ vars.OVH_HOST }}:8080/health" || echo "Health check failed"
+              curl -fsS "http://${{ inputs.host }}:8080/health" || echo "Health check failed"
               ;;
           esac
 
@@ -72,7 +74,7 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         with:
-          args: '✅ Deployment to ${{ vars.OVH_HOST }} Succeeded! Service: ${{ steps.derive.outputs.service }} • Commit: ${{ github.sha }} by ${{ github.actor }}'
+          args: '✅ Deployment to ${{ inputs.host }} Succeeded! Service: ${{ steps.derive.outputs.service }} • Commit: ${{ github.sha }} by ${{ github.actor }}'
 
       - name: Get Failure Details
         if: failure()
@@ -81,13 +83,13 @@ jobs:
           echo "Getting service logs for Discord notification..."
           
           # Get service status and logs
-          STATUS=$(ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+          STATUS=$(ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "sudo systemctl status ${SERVICE}.service --no-pager -l 2>/dev/null || echo 'Service status check failed'")
-          LOGS=$(ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+          LOGS=$(ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "sudo journalctl -u ${SERVICE}.service --since '5 minutes ago' --no-pager 2>/dev/null || echo 'Could not get journalctl logs'")
           
           # Also try to get application logs if they exist
-          APP_LOGS=$(ssh -o StrictHostKeyChecking=no deploy@${{ vars.OVH_HOST }} \
+          APP_LOGS=$(ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "ls -la ${{ steps.derive.outputs.path }}/logs/ 2>/dev/null && tail -10 ${{ steps.derive.outputs.path }}/logs/*.log 2>/dev/null || echo 'No app logs found'")
           
           # Truncate commit message to first 120 characters
@@ -119,7 +121,7 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         with:
           args: |
-            ❌ **Deployment Failed** to ${{ vars.OVH_HOST }}
+            ❌ **Deployment Failed** to ${{ inputs.host }}
             **Service:** ${{ steps.derive.outputs.service }} • **Author:** ${{ github.actor }} • **Branch:** ${{ github.ref_name }}
             **Commit:** ${{ env.COMMIT_TRUNCATED }}
             
