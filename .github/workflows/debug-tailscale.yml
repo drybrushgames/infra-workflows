@@ -1,0 +1,36 @@
+name: Debug Tailscale Connection
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          stable
+
+      - name: Debug Tailscale connectivity
+        run: |
+          echo "=== Tailscale Status ==="
+          tailscale status || echo "Tailscale status failed"
+          
+          echo "=== Network interfaces ==="
+          ip addr show || ifconfig
+          
+          echo "=== DNS resolution test ==="
+          nslookup vps-0b87e710.tail751d97.ts.net || echo "nslookup failed"
+          
+          echo "=== Ping test ==="
+          ping -c 3 vps-0b87e710.tail751d97.ts.net || echo "ping failed"
+          
+          echo "=== SSH test (no key) ==="
+          ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no deploy@vps-0b87e710.tail751d97.ts.net "echo 'SSH connection successful'" || echo "SSH failed (expected without key)"
+          
+          echo "=== Environment ==="
+          env | grep -i tailscale || echo "No tailscale env vars"
