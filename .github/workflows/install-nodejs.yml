@@ -1,0 +1,41 @@
+name: Install Node.js
+
+on:
+  workflow_dispatch:
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Install Node.js manually
+        run: |
+          echo "=== Checking if Node.js already exists ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "node --version || echo 'Node.js not found'"
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "npm --version || echo 'npm not found'"
+          
+          echo "=== Installing Node.js manually step by step ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -"
+          
+          echo "=== Running apt-get install ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo apt-get update && sudo apt-get install -y nodejs"
+          
+          echo "=== Verifying installation ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "node --version && npm --version"
+          
+          echo "=== Installing backend dependencies ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "cd /opt/PiratePlunder/backend && npm install --omit=dev"
+          
+          echo "=== Starting service ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo systemctl restart PiratePlunder.service"
+          
+          echo "=== Checking service status ==="
+          sleep 3
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "systemctl is-active PiratePlunder.service && echo 'Service active' || echo 'Service not active'"
