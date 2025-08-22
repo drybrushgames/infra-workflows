@@ -1,0 +1,38 @@
+name: Check Deployment Build Process
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Test build process and check dependencies
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Check Node.js and npm versions ==="
+          tailscale ssh deploy@$HOST "node --version && npm --version"
+          
+          echo -e "\n=== Check if authentication dependencies are installed ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npm list @prisma/client passport express-session 2>/dev/null || echo 'Missing auth dependencies'"
+          
+          echo -e "\n=== Check if compiled backend has authentication routes ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend/dist && grep -r 'auth/user' . || echo 'No auth routes in compiled code'"
+          
+          echo -e "\n=== Check TypeScript compilation ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npx tsc --version && ls -la dist/"
+          
+          echo -e "\n=== Try manual rebuild and check result ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder && make build 2>&1 | tail -10 || echo 'Make command failed'"
+          
+          echo -e "\n=== Check backend dist after rebuild ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend/dist && grep -r '/auth' . || echo 'Still no auth routes after rebuild'"
