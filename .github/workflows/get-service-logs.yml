@@ -33,6 +33,9 @@ jobs:
           echo -e "\n=== Setup database with environment ==="
           tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && DATABASE_URL='file:/opt/PiratePlunder/data/pirate.db' npx prisma db push --accept-data-loss"
           
+          echo -e "\n=== Copy Prisma client to expected location ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && cp -r src/generated dist/"
+          
           echo -e "\n=== Test manual start ==="
           tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && timeout 10 node dist/server.js || echo 'Test completed'"
           
