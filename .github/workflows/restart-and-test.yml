@@ -1,0 +1,44 @@
+name: Restart Service and Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  restart-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Restart service and test API
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Restart PiratePlunder service ==="
+          tailscale ssh deploy@$HOST "sudo systemctl stop PiratePlunder.service"
+          sleep 3
+          tailscale ssh deploy@$HOST "sudo systemctl start PiratePlunder.service"
+          
+          echo "=== Wait for service to start ==="
+          sleep 10
+          
+          echo "=== Check service status ==="
+          tailscale ssh deploy@$HOST "systemctl is-active PiratePlunder.service"
+          
+          echo -e "\n=== Test API routes after restart ==="
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/api/health" || echo "API health failed"
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/auth/user | head -5" || echo "Auth endpoint failed"
+          
+          echo -e "\n=== Test Socket.io handshake ==="
+          tailscale ssh deploy@$HOST "curl -s 'http://localhost:3001/socket.io/?EIO=4&transport=polling' | head -1"
+          
+          echo -e "\n=== Check recent logs for errors ==="
+          tailscale ssh deploy@$HOST "sudo journalctl -u PiratePlunder.service --since '2 minutes ago' | grep -E 'error|Error|ERROR|fail|FAIL' || echo 'No recent errors'"
+          
+          echo -e "\n=== Test frontend serving ==="
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/ | grep -o '<title>.*</title>'"
