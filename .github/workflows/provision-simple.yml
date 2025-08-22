@@ -47,6 +47,15 @@ jobs:
           tailscale ssh deploy@${{ inputs.host }} \
             "sudo mkdir -p /opt/${{ steps.derive.outputs.name }}/{run,logs,scripts} && sudo chown -R deploy:deploy /opt/${{ steps.derive.outputs.name }}"
 
+      - name: Install Node.js (if needed)
+        if: ${{ inputs.type == 'node' }}
+        run: |
+          tailscale ssh deploy@${{ inputs.host }} \
+            "curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && \
+             sudo apt-get install -y nodejs && \
+             node --version && npm --version && \
+             echo 'Node.js installation complete'"
+
       - name: Create database
         run: |
           tailscale ssh deploy@${{ inputs.host }} \
