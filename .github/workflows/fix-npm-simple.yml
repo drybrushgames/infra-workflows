@@ -1,0 +1,40 @@
+name: Fix npm Simple
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Fix npm and install dependencies
+        run: |
+          echo "=== Current Node.js status ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "node --version"
+          
+          echo "=== Removing broken apt sources ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo rm -f /etc/apt/sources.list.d/caddy-stable.list"
+          
+          echo "=== Installing npm via snap ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo snap install node --classic"
+          
+          echo "=== Verifying npm installation ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "npm --version"
+          
+          echo "=== Installing PiratePlunder backend dependencies ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "cd /opt/PiratePlunder/backend && npm install --omit=dev"
+          
+          echo "=== Starting PiratePlunder service ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo systemctl restart PiratePlunder.service"
+          
+          echo "=== Checking final service status ==="
+          sleep 5
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "systemctl is-active PiratePlunder.service"
