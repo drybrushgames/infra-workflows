@@ -1,0 +1,33 @@
+name: Debug Service Logs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Debug service failure
+        run: |
+          echo "=== Service status details ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo systemctl status PiratePlunder.service --no-pager -l || echo 'Could not get status'"
+          
+          echo "=== Service logs (last 20 lines) ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo journalctl -u PiratePlunder.service --no-pager -n 20 || echo 'Could not get logs'"
+          
+          echo "=== Check if dist directory exists ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt/PiratePlunder/backend/dist/ || echo 'Dist directory not found'"
+          
+          echo "=== Check if server.js exists ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt/PiratePlunder/backend/dist/server.js || echo 'server.js not found'"
+          
+          echo "=== Try to run server manually ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "cd /opt/PiratePlunder/backend && timeout 5s node dist/server.js || echo 'Manual run failed or timed out'"
