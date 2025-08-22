@@ -1,0 +1,53 @@
+name: Fix PiratePlunder SystemD Service
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Fix PiratePlunder systemd service with correct configuration
+        run: |
+          echo "=== Creating correct systemd service for PiratePlunder ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net \
+            "echo '[Unit]
+          Description=PiratePlunder
+          After=network.target
+          
+          [Service]
+          User=deploy
+          WorkingDirectory=/opt/PiratePlunder/backend
+          EnvironmentFile=/opt/PiratePlunder/.env
+          ExecStart=/usr/bin/bash -lc \"cd /opt/PiratePlunder/backend && PORT=3001 npm start\"
+          Restart=always
+          
+          [Install]
+          WantedBy=multi-user.target' | sudo tee /etc/systemd/system/PiratePlunder.service"
+          
+          echo "=== Reloading systemd daemon ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo systemctl daemon-reload"
+          
+          echo "=== Enabling and starting PiratePlunder service ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo systemctl enable PiratePlunder.service"
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo systemctl restart PiratePlunder.service"
+          
+          echo "=== Waiting for service to start ==="
+          sleep 10
+          
+          echo "=== Checking final service status ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "systemctl is-active PiratePlunder.service && echo '✅ Service is active' || echo '❌ Service failed'"
+          
+          echo "=== Testing server connectivity ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "curl -fsS http://localhost:3001/ && echo '✅ Server responding' || echo '❌ Server not responding'"
+          
+          echo "=== Getting service logs ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo journalctl -u PiratePlunder.service --since '2 minutes ago' --no-pager"
