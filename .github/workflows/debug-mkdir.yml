@@ -15,29 +15,40 @@ jobs:
           tags:             tag:ci
           version:          1.76.1
 
-      - name: Test basic SSH
+      - name: Test basic SSH with root
         run: |
-          echo "=== Testing basic SSH connection ==="
-          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "echo 'SSH works'"
+          echo "=== Testing basic SSH connection with root ==="
+          tailscale ssh root@vps-0b87e710.tail751d97.ts.net "echo 'SSH works as root'"
 
-      - name: Test sudo access
+      - name: Check if deploy user exists
         run: |
-          echo "=== Testing sudo access ==="
-          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo whoami"
+          echo "=== Checking if deploy user exists ==="
+          tailscale ssh root@vps-0b87e710.tail751d97.ts.net "id deploy || echo 'deploy user does not exist'"
+
+      - name: Create deploy user if needed
+        run: |
+          echo "=== Creating deploy user if needed ==="
+          tailscale ssh root@vps-0b87e710.tail751d97.ts.net "useradd -m -s /bin/bash deploy || echo 'deploy user already exists'"
+          tailscale ssh root@vps-0b87e710.tail751d97.ts.net "usermod -aG sudo deploy || echo 'failed to add deploy to sudo group'"
 
       - name: Test directory structure
         run: |
           echo "=== Checking /opt directory ==="
-          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt || echo '/opt does not exist'"
+          tailscale ssh root@vps-0b87e710.tail751d97.ts.net "ls -la /opt || echo '/opt does not exist'"
 
       - name: Test mkdir step by step
         run: |
           echo "=== Testing mkdir step by step ==="
-          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo mkdir -p /opt/menagerie || echo 'mkdir /opt/menagerie failed'"
-          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo mkdir -p /opt/menagerie/run || echo 'mkdir run failed'"
-          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo mkdir -p /opt/menagerie/logs || echo 'mkdir logs failed'"
-          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo mkdir -p /opt/menagerie/scripts || echo 'mkdir scripts failed'"
-          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo chown -R deploy:deploy /opt/menagerie || echo 'chown failed'"
+          tailscale ssh root@vps-0b87e710.tail751d97.ts.net "mkdir -p /opt/menagerie || echo 'mkdir /opt/menagerie failed'"
+          tailscale ssh root@vps-0b87e710.tail751d97.ts.net "mkdir -p /opt/menagerie/run || echo 'mkdir run failed'"
+          tailscale ssh root@vps-0b87e710.tail751d97.ts.net "mkdir -p /opt/menagerie/logs || echo 'mkdir logs failed'"
+          tailscale ssh root@vps-0b87e710.tail751d97.ts.net "mkdir -p /opt/menagerie/scripts || echo 'mkdir scripts failed'"
+          tailscale ssh root@vps-0b87e710.tail751d97.ts.net "chown -R deploy:deploy /opt/menagerie || echo 'chown failed'"
+
+      - name: Test deploy user SSH after creation
+        run: |
+          echo "=== Testing deploy user SSH ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "echo 'SSH works as deploy'"
 
       - name: Verify final result
         run: |
