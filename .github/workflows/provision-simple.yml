@@ -101,17 +101,19 @@ jobs:
 
       - name: Create deploy script
         run: |
-          echo '#!/usr/bin/env bash
+          tailscale ssh deploy@${{ inputs.host }} \
+            "cat > /opt/${{ steps.derive.outputs.name }}/scripts/deploy.sh << 'EOF'
+          #!/usr/bin/env bash
           set -euo pipefail
-          SERVICE="${{ steps.derive.outputs.name }}"
-          ROOT="/opt/${{ steps.derive.outputs.name }}"
-          REPO="${{ steps.derive.outputs.repo }}"
+          SERVICE=\"${{ steps.derive.outputs.name }}\"
+          ROOT=\"/opt/${{ steps.derive.outputs.name }}\"
+          REPO=\"${{ steps.derive.outputs.repo }}\"
           
-          if [ ! -d "$ROOT/.git" ]; then
-            git clone "$REPO" "$ROOT"
+          if [ ! -d \"\$ROOT/.git\" ]; then
+            git clone \"\$REPO\" \"\$ROOT\"
           fi
           
-          cd "$ROOT"
+          cd \"\$ROOT\"
           git fetch --all
           git reset --hard origin/main
           
@@ -121,13 +123,12 @@ jobs:
             command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev
           fi
           
-          sudo systemctl restart ${SERVICE}.service || true
-          echo "Deploy OK for $SERVICE"' > deploy_script.sh
+          sudo systemctl restart \${SERVICE}.service || true
+          echo \"Deploy OK for \$SERVICE\"
+          EOF"
           
-          tailscale file cp deploy_script.sh deploy@${{ inputs.host }}:/opt/${{ steps.derive.outputs.name }}/scripts/deploy.sh
           tailscale ssh deploy@${{ inputs.host }} \
             "chmod +x /opt/${{ steps.derive.outputs.name }}/scripts/deploy.sh"
-          rm deploy_script.sh
 
       - name: Test provision
         run: |
