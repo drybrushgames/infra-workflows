@@ -1,0 +1,34 @@
+name: Manual Fix PiratePlunder
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Manual fix PiratePlunder
+        run: |
+          echo "=== Installing backend dependencies manually ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "cd /opt/PiratePlunder/backend && npm install --omit=dev"
+          
+          echo "=== Checking if node_modules now exists ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt/PiratePlunder/backend/node_modules/ | head -5 || echo 'Still no node_modules'"
+          
+          echo "=== Manually starting the service ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo systemctl restart PiratePlunder.service"
+          
+          echo "=== Checking service status after restart ==="
+          sleep 5
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "systemctl is-active PiratePlunder.service && echo 'Service is now active' || echo 'Service still not active'"
+          
+          echo "=== Getting service logs ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo journalctl -u PiratePlunder.service --since '1 minute ago' --no-pager || echo 'No logs found'"
