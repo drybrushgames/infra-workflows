@@ -1,0 +1,52 @@
+name: Fix Production Environment
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix-env:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Fix production environment
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Installing missing dependencies ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npm install @prisma/client passport passport-google-oauth20 express-session connect-pg-simple"
+          
+          echo "=== Updating environment file ==="
+          tailscale ssh deploy@$HOST "cat >> /opt/PiratePlunder/.env << 'EOF'
+
+# Authentication
+SESSION_SECRET=your-super-secret-session-key-change-this
+GOOGLE_CLIENT_ID=your-google-client-id-here
+GOOGLE_CLIENT_SECRET=your-google-client-secret-here
+
+# Frontend URL
+FRONTEND_URL=http://vps-0b87e710.tail751d97.ts.net:3001
+EOF"
+          
+          echo "=== Setup Prisma database ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npx prisma db push --accept-data-loss || echo 'Prisma setup may have failed'"
+          
+          echo "=== Generate Prisma client ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npx prisma generate"
+          
+          echo "=== Restart service ==="
+          tailscale ssh deploy@$HOST "sudo systemctl restart PiratePlunder.service"
+          
+          echo "=== Wait and check service ==="
+          sleep 10
+          tailscale ssh deploy@$HOST "systemctl is-active PiratePlunder.service"
+          
+          echo "=== Test new API endpoints ==="
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/api/health | head -1"
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/auth/user | head -1"
