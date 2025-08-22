@@ -1,0 +1,51 @@
+name: Debug Deployment Issues
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Debug deployment issues
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Check if make is installed ==="
+          tailscale ssh deploy@$HOST "which make || echo 'make not found'"
+          tailscale ssh deploy@$HOST "apt list --installed | grep make || echo 'make package not installed'"
+          
+          echo -e "\n=== Install make if missing ==="
+          tailscale ssh deploy@$HOST "sudo apt update && sudo apt install -y make"
+          
+          echo -e "\n=== Check service status in detail ==="
+          tailscale ssh deploy@$HOST "sudo systemctl status PiratePlunder.service --no-pager -l"
+          
+          echo -e "\n=== Check service logs for errors ==="
+          tailscale ssh deploy@$HOST "sudo journalctl -u PiratePlunder.service --since '10 minutes ago' --no-pager"
+          
+          echo -e "\n=== Check if process is actually running ==="
+          tailscale ssh deploy@$HOST "ps aux | grep node | grep -v grep"
+          
+          echo -e "\n=== Check if port 3001 is listening ==="
+          tailscale ssh deploy@$HOST "ss -tlnp | grep :3001 || echo 'Port 3001 not listening'"
+          
+          echo -e "\n=== Check firewall status ==="
+          tailscale ssh deploy@$HOST "sudo ufw status || echo 'ufw not active'"
+          
+          echo -e "\n=== Test local connectivity ==="
+          tailscale ssh deploy@$HOST "curl -v --connect-timeout 5 http://localhost:3001/ || echo 'Local connection failed'"
+          
+          echo -e "\n=== Check server.js file ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/backend/dist/server.js"
+          
+          echo -e "\n=== Manual test server start ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && timeout 10 node dist/server.js || echo 'Manual start completed/failed'"
