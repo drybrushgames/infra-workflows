@@ -56,71 +56,50 @@ jobs:
                        command -v yq >/dev/null 2>&1 || { sudo apt-get install -y wget jq >/dev/null && \
                          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 && sudo chmod +x /usr/local/bin/yq; }'"
 
-      - name: Create dir, DB, .env and deploy.sh
+      - name: Create directories
         run: |
-          ssh deploy@${{ inputs.host }} "bash -lc '
-            set -euo pipefail
-            NAME=\"${{ steps.derive.outputs.name }}\"
-            PATHDIR=\"${{ steps.derive.outputs.path }}\"
-            MODE=\"${{ steps.derive.outputs.mode }}\"
-            TYPE=\"${{ steps.derive.outputs.type }}\"
-            PORT=\"${{ steps.derive.outputs.port }}\"
-            REPO=\"${{ steps.derive.outputs.repo }}\"
+          ssh deploy@${{ inputs.host }} "sudo mkdir -p ${{ steps.derive.outputs.path }}/run ${{ steps.derive.outputs.path }}/logs ${{ steps.derive.outputs.path }}/scripts && sudo chown -R deploy:deploy ${{ steps.derive.outputs.path }}"
 
-            # dirs
-            sudo mkdir -p \"$PATHDIR\"/run \"$PATHDIR\"/logs \"$PATHDIR\"/scripts
-            sudo chown -R deploy:deploy \"$PATHDIR\"
+      - name: Create database
+        run: |
+          ssh deploy@${{ inputs.host }} "sudo -u postgres createdb ${{ steps.derive.outputs.name }} || true && sudo -u postgres psql -c \"GRANT ALL PRIVILEGES ON DATABASE \\\"${{ steps.derive.outputs.name }}\\\" TO svc;\" || true"
 
-            # DB
-            sudo -u postgres psql <<SQL || true
-CREATE DATABASE \"$NAME\";
-GRANT ALL PRIVILEGES ON DATABASE \"$NAME\" TO svc;
-SQL
+      - name: Create .env file
+        run: |
+          ssh deploy@${{ inputs.host }} "test -f ${{ steps.derive.outputs.path }}/.env || (echo 'DATABASE_URL=postgres://svc:${{ secrets.SVC_DB_PASSWORD }}@localhost:5432/${{ steps.derive.outputs.name }}?sslmode=disable
+          NODE_ENV=production
+          PORT=${{ steps.derive.outputs.port }}' | sudo tee ${{ steps.derive.outputs.path }}/.env && sudo chown deploy:deploy ${{ steps.derive.outputs.path }}/.env && sudo chmod 600 ${{ steps.derive.outputs.path }}/.env)"
 
-            # .env
-            if [ ! -f \"$PATHDIR/.env\" ]; then
-              cat <<EENV | sudo tee \"$PATHDIR/.env\" >/dev/null
-DATABASE_URL=postgres://svc:${{ secrets.SVC_DB_PASSWORD }}@localhost:5432/${NAME}?sslmode=disable
-NODE_ENV=production
-PORT=${PORT}
-EENV
-              sudo chown deploy:deploy \"$PATHDIR/.env\"
-              sudo chmod 600 \"$PATHDIR/.env\"
-            fi
-
-            # deploy.sh
-            if [ ! -f \"$PATHDIR/scripts/deploy.sh\" ]; then
-              cat <<\"EDEP\" | sudo tee \"$PATHDIR/scripts/deploy.sh\" >/dev/null
-#!/usr/bin/env bash
-set -euo pipefail
-SERVICE=\"${NAME}\"
-ROOT=\"${PATHDIR}\"
-REPO=\"${REPO}\"
-
-if [ ! -d \"$ROOT/.git\" ]; then
-  git clone \"$REPO\" \"$ROOT\"
-fi
-
-git -C \"$ROOT\" fetch --all
-git -C \"$ROOT\" reset --hard origin/main
-
-make -C \"$ROOT\" build || true
-
-# Node deps if present
-if [ -f \"$ROOT/package.json\" ]; then
-  cd \"$ROOT\"
-  command -v pnpm >/dev/null 2>&1 && pnpm i --prod \
-    || npm ci --omit=dev \
-    || npm i --omit=dev
-fi
-
-sudo /usr/bin/systemctl restart ${NAME}.service || true
-echo \"Deploy OK for $SERVICE\"
-EDEP
-              sudo chown deploy:deploy \"$PATHDIR/scripts/deploy.sh\"
-              sudo chmod +x \"$PATHDIR/scripts/deploy.sh\"
-            fi
-          '"
+      - name: Create deploy script
+        run: |
+          cat > deploy_script.sh << 'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          SERVICE="${{ steps.derive.outputs.name }}"
+          ROOT="${{ steps.derive.outputs.path }}"
+          REPO="${{ steps.derive.outputs.repo }}"
+          
+          if [ ! -d "$ROOT/.git" ]; then
+            git clone "$REPO" "$ROOT"
+          fi
+          
+          git -C "$ROOT" fetch --all
+          git -C "$ROOT" reset --hard origin/main
+          
+          make -C "$ROOT" build || true
+          
+          if [ -f "$ROOT/package.json" ]; then
+            cd "$ROOT"
+            command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev
+          fi
+          
+          sudo /usr/bin/systemctl restart ${SERVICE}.service || true
+          echo "Deploy OK for $SERVICE"
+          EOF
+          
+          scp deploy_script.sh deploy@${{ inputs.host }}:${{ steps.derive.outputs.path }}/scripts/deploy.sh
+          ssh deploy@${{ inputs.host }} "sudo chown deploy:deploy ${{ steps.derive.outputs.path }}/scripts/deploy.sh && sudo chmod +x ${{ steps.derive.outputs.path }}/scripts/deploy.sh"
+          rm deploy_script.sh
 
       - name: Install systemd unit (tcp or socket)
         run: |

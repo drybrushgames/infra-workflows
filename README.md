@@ -2,6 +2,46 @@
 
 Centralized GitHub Actions workflows for deploying services via Tailscale SSH.
 
+## ⚠️ IMPORTANT: Repository Visibility Requirements
+
+**This repository must be temporarily made PUBLIC when running workflows due to GitHub free plan limitations.**
+
+GitHub's free plan does not support calling reusable workflows from private repositories. To maintain security while working around this limitation:
+
+1. **Default state**: Repository is kept **PRIVATE** for security
+2. **During workflow runs**: Use the helper script that temporarily makes it public
+3. **After completion**: Repository is automatically made private again
+
+### Quick Provision with Helper Script
+
+```bash
+# Use the helper script to provision a service (handles visibility automatically)
+./provision-helper.sh menagerie go tcp 8080
+
+# The script will:
+# 1. Temporarily make this repo public
+# 2. Run the provision workflow
+# 3. Monitor the workflow progress
+# 4. Make the repo private again when done
+```
+
+### Manual Workflow Execution
+
+If you need to run workflows manually:
+
+```bash
+# 1. Make repo public (REQUIRED!)
+gh api -X PATCH repos/drybrushgames/infra-workflows -f private=false
+
+# 2. Run your workflow
+gh workflow run provision.yml --repo drybrushgames/menagerie -f type=go -f mode=tcp
+
+# 3. Make repo private again (CRITICAL!)
+gh api -X PATCH repos/drybrushgames/infra-workflows -f private=true
+```
+
+⚠️ **NEVER leave this repository public longer than necessary!**
+
 ## Overview
 
 This repository provides a **reusable deployment workflow** that automatically:
