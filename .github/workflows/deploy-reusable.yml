@@ -46,7 +46,13 @@ jobs:
             "cd ${{ steps.derive.outputs.path }} && \
              tar -xzf - && \
              make build || true && \
-             if [ -f package.json ]; then command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev; fi && \
+             SERVICE_NAME=\"${{ steps.derive.outputs.service }}\" && \
+             if [ \"$SERVICE_NAME\" = \"PiratePlunder\" ]; then \
+               echo \"Installing PiratePlunder backend dependencies...\" && \
+               cd backend && (command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev) && cd .. ; \
+             elif [ -f package.json ]; then \
+               command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev ; \
+             fi && \
              sudo systemctl restart ${{ steps.derive.outputs.service }}.service || true && \
              echo 'Deploy OK for ${{ steps.derive.outputs.service }}'"
 
