@@ -38,10 +38,23 @@ jobs:
       - name: Build (optional)
         run: make build || true
 
-      - name: Deploy over SSH
+      - name: Deploy code to server
         run: |
+          # Create a tar archive of the code (excluding .git for efficiency)
+          tar --exclude='.git' -czf deploy.tar.gz .
+          
+          # Upload the code to the server
+          tailscale file cp deploy.tar.gz deploy@${{ inputs.host }}:/opt/${{ steps.derive.outputs.service }}/
+          
+          # Extract and run deployment on server
           tailscale ssh deploy@${{ inputs.host }} \
-            "bash -lc 'cd ${{ steps.derive.outputs.path }} && ./scripts/deploy.sh'"
+            "cd ${{ steps.derive.outputs.path }} && \
+             tar -xzf deploy.tar.gz --strip-components=0 && \
+             rm deploy.tar.gz && \
+             make build || true && \
+             if [ -f package.json ]; then command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev; fi && \
+             sudo systemctl restart ${{ steps.derive.outputs.service }}.service || true && \
+             echo 'Deploy OK for ${{ steps.derive.outputs.service }}'"
 
       - name: Debug Service Status
         if: success()
