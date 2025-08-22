@@ -9,6 +9,15 @@ on:
       repo:    { type: string, required: false, description: "Git URL; defaults to caller repo" }
       port:    { type: string, required: false, default: "8080", description: "TCP port if mode=tcp" }
       host:    { type: string, required: false, default: "vps-0b87e710.tail751d97.ts.net", description: "OVH host" }
+    secrets:
+      TAILSCALE_OAUTH_CLIENT_ID:
+        required: true
+      TAILSCALE_OAUTH_CLIENT_SECRET:
+        required: true
+      SVC_DB_PASSWORD:
+        required: true
+      DISCORD_WEBHOOK_URL:
+        required: false
 
 jobs:
   provision:
