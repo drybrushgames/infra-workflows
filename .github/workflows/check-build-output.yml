@@ -1,0 +1,38 @@
+name: Check Build Output
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Check deployment build structure
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Check frontend build location ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/frontend/dist/ 2>/dev/null || echo 'No frontend/dist'"
+          
+          echo -e "\n=== Check backend public directory ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/backend/dist/public/ 2>/dev/null || echo 'No backend/dist/public'"
+          
+          echo -e "\n=== Check if index.html exists where backend expects ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/backend/dist/public/index.html 2>/dev/null || echo 'Missing index.html in backend/dist/public'"
+          
+          echo -e "\n=== Check backend dist structure ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/backend/dist/"
+          
+          echo -e "\n=== Try manual build to see what happens ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder && make build 2>&1" || echo "Build failed"
+          
+          echo -e "\n=== Check again after manual build ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/backend/dist/public/ 2>/dev/null || echo 'Still no backend/dist/public'"
