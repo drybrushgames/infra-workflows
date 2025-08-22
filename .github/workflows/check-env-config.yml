@@ -1,0 +1,48 @@
+name: Check Environment Configuration
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-env:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Check environment configuration
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Environment File Check ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/.env"
+          
+          echo -e "\n=== Environment Variables (sanitized) ==="
+          tailscale ssh deploy@$HOST "cat /opt/PiratePlunder/.env | sed 's/=.*/=***HIDDEN***/' | sort"
+          
+          echo -e "\n=== Database Connection Test ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && node -e \"
+            require('dotenv').config({ path: '../.env' });
+            const { PrismaClient } = require('@prisma/client');
+            const prisma = new PrismaClient();
+            prisma.\\\$connect()
+              .then(() => { console.log('✅ Database connection successful'); process.exit(0); })
+              .catch(err => { console.log('❌ Database connection failed:', err.message); process.exit(1); });
+          \"" || echo "Database test failed"
+          
+          echo -e "\n=== API Health Check ==="
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/api/health | jq ." || echo "API health check failed"
+          
+          echo -e "\n=== Authentication Endpoints ==="
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/auth/user" || echo "Auth endpoint test failed"
+          
+          echo -e "\n=== Recent Application Logs ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/logs/ 2>/dev/null || echo 'No logs directory'"
+          
+          echo -e "\n=== Service Environment ==="
+          tailscale ssh deploy@$HOST "sudo systemctl show PiratePlunder.service --property=Environment" || echo "Could not get service environment"
