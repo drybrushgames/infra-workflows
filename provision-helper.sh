@@ -8,16 +8,14 @@ REPO="drybrushgames/infra-workflows"
 SERVICE="${1:-}"
 TYPE="${2:-}"
 MODE="${3:-tcp}"
-PORT="${4:-8080}"
 
 if [ -z "$SERVICE" ] || [ -z "$TYPE" ]; then
-  echo "Usage: $0 <service-name> <type> [mode] [port]"
+  echo "Usage: $0 <service-name> <type> [mode]"
   echo "  service-name: Name of the service repository (e.g., menagerie, pirateplunder)"
   echo "  type: Service type (node|go|python)"
   echo "  mode: Connection mode (tcp|socket) - default: tcp"
-  echo "  port: Service port if mode=tcp - default: 8080"
   echo ""
-  echo "Example: $0 menagerie go tcp 8080"
+  echo "Example: $0 menagerie go tcp"
   exit 1
 fi
 
@@ -31,8 +29,7 @@ echo "🚀 Triggering provision workflow for $SERVICE..."
 gh workflow run provision.yml \
   --repo "drybrushgames/$SERVICE" \
   -f "type=$TYPE" \
-  -f "mode=$MODE" \
-  -f "port=$PORT"
+  -f "mode=$MODE"
 
 echo "⏳ Waiting for workflow to start..."
 sleep 15
