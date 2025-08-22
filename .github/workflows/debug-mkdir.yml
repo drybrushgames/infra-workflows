@@ -1,0 +1,45 @@
+name: Debug mkdir
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Test basic SSH
+        run: |
+          echo "=== Testing basic SSH connection ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "echo 'SSH works'"
+
+      - name: Test sudo access
+        run: |
+          echo "=== Testing sudo access ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo whoami"
+
+      - name: Test directory structure
+        run: |
+          echo "=== Checking /opt directory ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt || echo '/opt does not exist'"
+
+      - name: Test mkdir step by step
+        run: |
+          echo "=== Testing mkdir step by step ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo mkdir -p /opt/menagerie || echo 'mkdir /opt/menagerie failed'"
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo mkdir -p /opt/menagerie/run || echo 'mkdir run failed'"
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo mkdir -p /opt/menagerie/logs || echo 'mkdir logs failed'"
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo mkdir -p /opt/menagerie/scripts || echo 'mkdir scripts failed'"
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo chown -R deploy:deploy /opt/menagerie || echo 'chown failed'"
+
+      - name: Verify final result
+        run: |
+          echo "=== Verifying final directory structure ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt/menagerie"
