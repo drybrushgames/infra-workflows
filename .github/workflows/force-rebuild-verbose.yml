@@ -1,0 +1,55 @@
+name: Force Rebuild with Verbose Logging
+
+on:
+  workflow_dispatch:
+
+jobs:
+  force-rebuild-verbose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Force rebuild with detailed error reporting
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Stop service ==="
+          tailscale ssh deploy@$HOST "sudo systemctl stop PiratePlunder.service"
+          
+          echo "=== Clean old builds ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder && rm -rf backend/dist frontend/dist"
+          
+          echo "=== Install ALL dependencies (including dev) ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npm install --include=dev"
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/frontend && npm ci"
+          
+          echo "=== Build backend with verbose output ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npx tsc -p . --listFiles | tail -20"
+          
+          echo "=== Check if server.js was created ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/backend/dist/server.js || echo 'server.js NOT CREATED'"
+          
+          echo "=== Build frontend ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/frontend && npm run build"
+          
+          echo "=== Copy frontend to backend ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder && mkdir -p backend/dist/public && cp -r frontend/dist/* backend/dist/public/"
+          
+          echo "=== Copy AI profiles ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder && cp backend/src/ai-profiles.json backend/dist/"
+          
+          echo "=== Test compiled server manually ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && timeout 5 node dist/server.js || echo 'Server test completed'"
+          
+          echo "=== Start service ==="
+          tailscale ssh deploy@$HOST "sudo systemctl start PiratePlunder.service"
+          
+          echo "=== Check final status ==="
+          sleep 10
+          tailscale ssh deploy@$HOST "systemctl is-active PiratePlunder.service && curl -s http://localhost:3001/api/health || echo 'Service check failed'"
