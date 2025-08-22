@@ -78,7 +78,7 @@ jobs:
             "menagerie")
               curl -fsS "http://${{ inputs.host }}:8080/health" || echo "Health check failed"
               ;;
-            "pirateplunder") 
+            "pirateplunder"|"PiratePlunder") 
               curl -fsS "http://${{ inputs.host }}:3001/health" || echo "Health check failed"
               ;;
             "quietpm")
