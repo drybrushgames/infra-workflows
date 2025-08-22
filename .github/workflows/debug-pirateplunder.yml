@@ -1,0 +1,39 @@
+name: Debug PiratePlunder Service
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Debug PiratePlunder service
+        run: |
+          echo "=== Checking directory structure ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt/PiratePlunder/"
+          
+          echo "=== Checking backend directory ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt/PiratePlunder/backend/ || echo 'Backend directory not found'"
+          
+          echo "=== Checking if dist directory exists ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt/PiratePlunder/backend/dist/ || echo 'Dist directory not found'"
+          
+          echo "=== Checking if node_modules exists ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt/PiratePlunder/backend/node_modules/ | head -5 || echo 'Node modules not found'"
+          
+          echo "=== Checking service status ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo systemctl status PiratePlunder.service || echo 'Service status failed'"
+          
+          echo "=== Checking service logs ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo journalctl -u PiratePlunder.service --since '10 minutes ago' --no-pager || echo 'Could not get logs'"
+          
+          echo "=== Checking environment file ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "cat /opt/PiratePlunder/.env || echo 'No .env file found'"
