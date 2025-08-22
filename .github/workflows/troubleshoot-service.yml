@@ -1,0 +1,47 @@
+name: Troubleshoot Service
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service name to troubleshoot"
+        required: true
+        default: "PiratePlunder"
+
+jobs:
+  troubleshoot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Check service status
+        run: |
+          SERVICE="${{ inputs.service }}"
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Service Status ==="
+          tailscale ssh deploy@$HOST "sudo systemctl status ${SERVICE}.service --no-pager -l" || echo "Service status failed"
+          
+          echo -e "\n=== Service is-active check ==="
+          tailscale ssh deploy@$HOST "systemctl is-active ${SERVICE}.service" || echo "Service not active"
+          
+          echo -e "\n=== Recent service logs ==="
+          tailscale ssh deploy@$HOST "sudo journalctl -u ${SERVICE}.service --since '10 minutes ago' --no-pager" || echo "Could not get logs"
+          
+          echo -e "\n=== Port check ==="
+          tailscale ssh deploy@$HOST "ss -tlnp | grep :3001" || echo "Port 3001 not listening"
+          
+          echo -e "\n=== Process check ==="
+          tailscale ssh deploy@$HOST "ps aux | grep -i pirate" || echo "No PiratePlunder processes"
+          
+          echo -e "\n=== Directory check ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/" || echo "Directory check failed"
+          
+          echo -e "\n=== Health check from server ==="
+          tailscale ssh deploy@$HOST "curl -m 5 http://localhost:3001/health" || echo "Local health check failed"
