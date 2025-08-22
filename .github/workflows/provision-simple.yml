@@ -77,12 +77,20 @@ jobs:
           case "${{ inputs.type }}" in
             go)
               EXEC_CMD="cd /opt/${{ steps.derive.outputs.name }} && PORT=${{ inputs.port }} ./bin/server"
+              WORKING_DIR="/opt/${{ steps.derive.outputs.name }}"
               ;;
             node)
-              EXEC_CMD="cd /opt/${{ steps.derive.outputs.name }} && PORT=${{ inputs.port }} npm start"
+              if [ "${{ steps.derive.outputs.name }}" = "PiratePlunder" ]; then
+                EXEC_CMD="cd /opt/${{ steps.derive.outputs.name }}/backend && PORT=${{ inputs.port }} npm start"
+                WORKING_DIR="/opt/${{ steps.derive.outputs.name }}/backend"
+              else
+                EXEC_CMD="cd /opt/${{ steps.derive.outputs.name }} && PORT=${{ inputs.port }} npm start"
+                WORKING_DIR="/opt/${{ steps.derive.outputs.name }}"
+              fi
               ;;
             python)
               EXEC_CMD="cd /opt/${{ steps.derive.outputs.name }} && PORT=${{ inputs.port }} uvicorn app:app --host 0.0.0.0 --port ${{ inputs.port }}"
+              WORKING_DIR="/opt/${{ steps.derive.outputs.name }}"
               ;;
             *)
               echo "Unknown service type: ${{ inputs.type }}"
@@ -97,7 +105,7 @@ jobs:
           
           [Service]
           User=deploy
-          WorkingDirectory=/opt/${{ steps.derive.outputs.name }}
+          WorkingDirectory=$WORKING_DIR
           EnvironmentFile=/opt/${{ steps.derive.outputs.name }}/.env
           ExecStart=/usr/bin/bash -lc \"$EXEC_CMD\"
           Restart=always
