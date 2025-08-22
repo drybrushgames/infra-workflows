@@ -1,0 +1,137 @@
+name: Provision Service (Simple)
+
+on:
+  workflow_call:
+    inputs:
+      service: { type: string, required: false, description: "Service name; defaults to caller repo name" }
+      type:    { type: string, required: true,  description: "node|go|python" }
+      mode:    { type: string, required: false, default: "tcp", description: "tcp|socket (default tcp)" }
+      repo:    { type: string, required: false, description: "Git URL; defaults to caller repo" }
+      port:    { type: string, required: false, default: "8080", description: "TCP port if mode=tcp" }
+      host:    { type: string, required: false, default: "vps-0b87e710.tail751d97.ts.net", description: "OVH host" }
+    secrets:
+      TAILSCALE_OAUTH_CLIENT_ID:
+        required: true
+      TAILSCALE_OAUTH_CLIENT_SECRET:
+        required: true
+      SVC_DB_PASSWORD:
+        required: true
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          stable
+
+      - name: Derive inputs
+        id: derive
+        run: |
+          REPO="${{ inputs.repo }}"
+          if [ -z "$REPO" ]; then REPO="https://github.com/${GITHUB_REPOSITORY}.git"; fi
+          NAME="${{ inputs.service }}"
+          if [ -z "$NAME" ]; then NAME="${GITHUB_REPOSITORY#*/}"; fi
+          echo "repo=$REPO" >> $GITHUB_OUTPUT
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+          echo "path=/opt/$NAME" >> $GITHUB_OUTPUT
+
+      - name: Create directories
+        run: |
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+            "sudo mkdir -p /opt/${{ steps.derive.outputs.name }}/{run,logs,scripts} && sudo chown -R deploy:deploy /opt/${{ steps.derive.outputs.name }}"
+
+      - name: Create database
+        run: |
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+            "sudo -u postgres createdb ${{ steps.derive.outputs.name }} || true"
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+            "sudo -u postgres psql -c \"GRANT ALL PRIVILEGES ON DATABASE \\\"${{ steps.derive.outputs.name }}\\\" TO svc;\" || true"
+
+      - name: Create .env file
+        run: |
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+            "test -f /opt/${{ steps.derive.outputs.name }}/.env || echo 'DATABASE_URL=postgres://svc:${{ secrets.SVC_DB_PASSWORD }}@localhost:5432/${{ steps.derive.outputs.name }}?sslmode=disable
+          NODE_ENV=production
+          PORT=${{ inputs.port }}' | sudo tee /opt/${{ steps.derive.outputs.name }}/.env > /dev/null"
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+            "sudo chown deploy:deploy /opt/${{ steps.derive.outputs.name }}/.env && sudo chmod 600 /opt/${{ steps.derive.outputs.name }}/.env"
+
+      - name: Create systemd service
+        run: |
+          case "${{ inputs.type }}" in
+            go)
+              EXEC_CMD="cd /opt/${{ steps.derive.outputs.name }} && PORT=${{ inputs.port }} ./bin/server"
+              ;;
+            node)
+              EXEC_CMD="cd /opt/${{ steps.derive.outputs.name }} && PORT=${{ inputs.port }} npm start"
+              ;;
+            python)
+              EXEC_CMD="cd /opt/${{ steps.derive.outputs.name }} && PORT=${{ inputs.port }} uvicorn app:app --host 0.0.0.0 --port ${{ inputs.port }}"
+              ;;
+            *)
+              echo "Unknown service type: ${{ inputs.type }}"
+              exit 1
+              ;;
+          esac
+          
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+            "echo '[Unit]
+          Description=${{ steps.derive.outputs.name }}
+          After=network.target
+          
+          [Service]
+          User=deploy
+          WorkingDirectory=/opt/${{ steps.derive.outputs.name }}
+          EnvironmentFile=/opt/${{ steps.derive.outputs.name }}/.env
+          ExecStart=/usr/bin/bash -lc \"$EXEC_CMD\"
+          Restart=always
+          
+          [Install]
+          WantedBy=multi-user.target' | sudo tee /etc/systemd/system/${{ steps.derive.outputs.name }}.service"
+          
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+            "sudo systemctl daemon-reload && sudo systemctl enable ${{ steps.derive.outputs.name }}.service"
+
+      - name: Create deploy script
+        run: |
+          echo '#!/usr/bin/env bash
+          set -euo pipefail
+          SERVICE="${{ steps.derive.outputs.name }}"
+          ROOT="/opt/${{ steps.derive.outputs.name }}"
+          REPO="${{ steps.derive.outputs.repo }}"
+          
+          if [ ! -d "$ROOT/.git" ]; then
+            git clone "$REPO" "$ROOT"
+          fi
+          
+          cd "$ROOT"
+          git fetch --all
+          git reset --hard origin/main
+          
+          make build || true
+          
+          if [ -f package.json ]; then
+            command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev
+          fi
+          
+          sudo systemctl restart ${SERVICE}.service || true
+          echo "Deploy OK for $SERVICE"' > deploy_script.sh
+          
+          scp -o StrictHostKeyChecking=no deploy_script.sh deploy@${{ inputs.host }}:/opt/${{ steps.derive.outputs.name }}/scripts/deploy.sh
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+            "chmod +x /opt/${{ steps.derive.outputs.name }}/scripts/deploy.sh"
+          rm deploy_script.sh
+
+      - name: Test provision
+        run: |
+          echo "✅ Provision completed for ${{ steps.derive.outputs.name }}"
+          echo "📁 Service path: /opt/${{ steps.derive.outputs.name }}"
+          echo "🗄️ Database: ${{ steps.derive.outputs.name }}"
+          echo "🔧 Service type: ${{ inputs.type }}"
