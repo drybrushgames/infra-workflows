@@ -1,0 +1,16 @@
+name: Test Simple
+
+on:
+  workflow_call:
+    inputs:
+      message:
+        type: string
+        required: false
+        default: "Hello World"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo message
+        run: echo "${{ inputs.message }}"
