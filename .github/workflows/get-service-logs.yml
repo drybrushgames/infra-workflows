@@ -1,0 +1,35 @@
+name: Get Service Error Logs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  get-logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Get detailed service error logs
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Stop service to prevent restart loop ==="
+          tailscale ssh deploy@$HOST "sudo systemctl stop PiratePlunder.service"
+          
+          echo -e "\n=== Get complete service logs ==="
+          tailscale ssh deploy@$HOST "sudo journalctl -u PiratePlunder.service --since '30 minutes ago' --no-pager"
+          
+          echo -e "\n=== Try manual start to capture startup error ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && node dist/server.js" || echo "Manual start failed - captured error above"
+          
+          echo -e "\n=== Check environment variables ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && env | grep -E 'DATABASE_URL|NODE_ENV|PORT' || echo 'No relevant env vars found'"
+          
+          echo -e "\n=== Check if .env file is accessible ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/.env && head -5 /opt/PiratePlunder/.env"
