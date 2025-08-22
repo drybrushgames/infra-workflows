@@ -1,0 +1,49 @@
+name: Configure Google OAuth Credentials
+
+on:
+  workflow_dispatch:
+
+jobs:
+  configure-oauth:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Configure real Google OAuth credentials
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Backup existing .env file ==="
+          tailscale ssh deploy@$HOST "cp /opt/PiratePlunder/.env /opt/PiratePlunder/.env.backup"
+          
+          echo "=== Update Google OAuth credentials in .env ==="
+          tailscale ssh deploy@$HOST "sed -i 's/GOOGLE_CLIENT_ID=.*/GOOGLE_CLIENT_ID=4580273885-irv1ae2vs7i00so08j7j5caa9mi3lb2o.apps.googleusercontent.com/' /opt/PiratePlunder/.env"
+          tailscale ssh deploy@$HOST "sed -i 's/GOOGLE_CLIENT_SECRET=.*/GOOGLE_CLIENT_SECRET=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/' /opt/PiratePlunder/.env"
+          
+          echo "=== Verify credentials were updated ==="
+          tailscale ssh deploy@$HOST "grep GOOGLE /opt/PiratePlunder/.env | sed 's/=.*/=***HIDDEN***/'"
+          
+          echo "=== Restart service with new credentials ==="
+          tailscale ssh deploy@$HOST "sudo systemctl restart PiratePlunder.service"
+          
+          echo "=== Wait for service to start ==="
+          sleep 15
+          
+          echo "=== Check service status ==="
+          tailscale ssh deploy@$HOST "systemctl is-active PiratePlunder.service"
+          
+          echo "=== Test health endpoint ==="
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/health | jq '.checks[] | select(.component==\"authentication\")'"
+          
+          echo "=== Test auth endpoint ==="
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/auth/user | head -5"
+          
+          echo ""
+          echo "✅ Google OAuth credentials configured successfully!"
+          echo "You can now login at: http://vps-0b87e710.tail751d97.ts.net:3001/"
