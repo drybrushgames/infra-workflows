@@ -30,8 +30,8 @@ jobs:
           echo -e "\n=== Create data directory ==="
           tailscale ssh deploy@$HOST "mkdir -p /opt/PiratePlunder/data && chown deploy:deploy /opt/PiratePlunder/data"
           
-          echo -e "\n=== Setup database ==="
-          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npx prisma db push --accept-data-loss"
+          echo -e "\n=== Setup database with environment ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && DATABASE_URL='file:/opt/PiratePlunder/data/pirate.db' npx prisma db push --accept-data-loss"
           
           echo -e "\n=== Test manual start ==="
           tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && timeout 10 node dist/server.js || echo 'Test completed'"
