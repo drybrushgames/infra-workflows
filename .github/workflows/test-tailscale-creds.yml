@@ -1,0 +1,82 @@
+name: Test Tailscale Credentials
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-oauth:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secrets are present
+        run: |
+          echo "TAILSCALE_OAUTH_CLIENT_ID length: ${#TAILSCALE_OAUTH_CLIENT_ID}"
+          echo "TAILSCALE_OAUTH_CLIENT_SECRET length: ${#TAILSCALE_OAUTH_CLIENT_SECRET}"
+          echo "Client ID starts with: ${TAILSCALE_OAUTH_CLIENT_ID:0:5}..."
+          echo "Secret starts with: ${TAILSCALE_OAUTH_CLIENT_SECRET:0:10}..."
+        env:
+          TAILSCALE_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          TAILSCALE_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+
+      - name: Test Tailscale OAuth with v1
+        continue-on-error: true
+        id: test_v1
+        uses: tailscale/github-action@v1
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags: tag:ci
+
+      - name: Show v1 result
+        run: |
+          echo "Tailscale v1 result: ${{ steps.test_v1.outcome }}"
+          if [ "${{ steps.test_v1.outcome }}" = "success" ]; then
+            echo "✅ v1 connection successful!"
+            tailscale status || echo "tailscale status failed"
+            ping -c 2 vps-0b87e710.tail751d97.ts.net || echo "ping failed"
+          else
+            echo "❌ v1 connection failed"
+          fi
+
+      - name: Test Tailscale OAuth with v2
+        continue-on-error: true
+        id: test_v2
+        if: steps.test_v1.outcome == 'failure'
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags: tag:ci
+          version: stable
+
+      - name: Show v2 result
+        if: steps.test_v1.outcome == 'failure'
+        run: |
+          echo "Tailscale v2 result: ${{ steps.test_v2.outcome }}"
+          if [ "${{ steps.test_v2.outcome }}" = "success" ]; then
+            echo "✅ v2 connection successful!"
+            tailscale status || echo "tailscale status failed"
+            ping -c 2 vps-0b87e710.tail751d97.ts.net || echo "ping failed"
+          else
+            echo "❌ v2 connection also failed"
+          fi
+
+      - name: Manual OAuth test
+        if: steps.test_v1.outcome == 'failure'
+        run: |
+          echo "Testing OAuth credentials manually..."
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"client_id\":\"$TAILSCALE_OAUTH_CLIENT_ID\",\"client_secret\":\"$TAILSCALE_OAUTH_CLIENT_SECRET\",\"scope\":\"devices:core\"}" \
+            https://api.tailscale.com/api/v2/oauth/token || echo "Manual OAuth test failed"
+        env:
+          TAILSCALE_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          TAILSCALE_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+
+      - name: Final result
+        run: |
+          if [ "${{ steps.test_v1.outcome }}" = "success" ] || [ "${{ steps.test_v2.outcome }}" = "success" ]; then
+            echo "🎉 Tailscale OAuth credentials are working!"
+          else
+            echo "💥 Tailscale OAuth credentials are not working"
+            echo "Check the OAuth client in Tailscale admin console"
+          fi
