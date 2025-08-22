@@ -22,10 +22,14 @@ jobs:
           echo "=== Stop service to prevent restart loop ==="
           tailscale ssh deploy@$HOST "sudo systemctl stop PiratePlunder.service"
           
-          echo -e "\n=== Add missing DATABASE_URL to .env ==="
+          echo -e "\n=== Add missing environment variables to .env ==="
           tailscale ssh deploy@$HOST "echo 'DATABASE_URL=file:/opt/PiratePlunder/data/pirate.db' >> /opt/PiratePlunder/.env"
           tailscale ssh deploy@$HOST "echo 'NODE_ENV=production' >> /opt/PiratePlunder/.env"
           tailscale ssh deploy@$HOST "echo 'PORT=3001' >> /opt/PiratePlunder/.env"
+          tailscale ssh deploy@$HOST "echo 'SESSION_SECRET=test-secret-key-for-deployment-testing' >> /opt/PiratePlunder/.env"
+          tailscale ssh deploy@$HOST "echo 'GOOGLE_CLIENT_ID=test-client-id' >> /opt/PiratePlunder/.env"
+          tailscale ssh deploy@$HOST "echo 'GOOGLE_CLIENT_SECRET=test-client-secret' >> /opt/PiratePlunder/.env"
+          tailscale ssh deploy@$HOST "echo 'FRONTEND_URL=http://vps-0b87e710.tail751d97.ts.net:3001' >> /opt/PiratePlunder/.env"
           
           echo -e "\n=== Create data directory ==="
           tailscale ssh deploy@$HOST "mkdir -p /opt/PiratePlunder/data && chown deploy:deploy /opt/PiratePlunder/data"
