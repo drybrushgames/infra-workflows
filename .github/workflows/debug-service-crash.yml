@@ -1,0 +1,35 @@
+name: Debug Service Crash
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug-crash:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Debug service crash
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Get detailed error logs ==="
+          tailscale ssh deploy@$HOST "sudo journalctl -u PiratePlunder.service --since '10 minutes ago' --no-pager" || echo "Could not get logs"
+          
+          echo -e "\n=== Try to start service manually to see error ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && node dist/server.js 2>&1 | head -20" || echo "Manual start failed"
+          
+          echo -e "\n=== Check if all dependencies are available ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npm list @prisma/client passport express-session 2>/dev/null || echo 'Missing dependencies'"
+          
+          echo -e "\n=== Check environment file ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/.env && echo 'Environment file exists'"
+          
+          echo -e "\n=== Check Prisma client ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npx prisma --version || echo 'Prisma check failed'"
