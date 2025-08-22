@@ -1,0 +1,33 @@
+name: Check PiratePlunder Final
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Check PiratePlunder status and logs
+        run: |
+          echo "=== Service status ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "systemctl is-active PiratePlunder.service"
+          
+          echo "=== Service logs ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo journalctl -u PiratePlunder.service --since '5 minutes ago' --no-pager"
+          
+          echo "=== Check if server is listening on port 3001 ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo netstat -tulnp | grep :3001 || echo 'Port 3001 not listening'"
+          
+          echo "=== Try connecting to main page ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "curl -fsS http://localhost:3001/ && echo 'Main page accessible' || echo 'Main page not accessible'"
+          
+          echo "=== Try different endpoints ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "curl -fsS http://localhost:3001/api || echo 'API endpoint failed'"
