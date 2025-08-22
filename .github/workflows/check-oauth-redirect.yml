@@ -1,0 +1,35 @@
+name: Check OAuth Redirect Configuration
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-redirect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Check OAuth redirect configuration
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Check current environment variables ==="
+          tailscale ssh deploy@$HOST "grep -E 'FRONTEND_URL|CALLBACK' /opt/PiratePlunder/.env || echo 'No redirect URLs found'"
+          
+          echo -e "\n=== Check passport configuration ==="
+          tailscale ssh deploy@$HOST "grep -A 5 -B 5 'callbackURL' /opt/PiratePlunder/backend/dist/config/passport.js"
+          
+          echo -e "\n=== Check if there's any suspicious redirect code ==="
+          tailscale ssh deploy@$HOST "grep -r 'bedpage' /opt/PiratePlunder/ 2>/dev/null || echo 'No suspicious redirects found'"
+          
+          echo -e "\n=== Check OAuth route configuration ==="
+          tailscale ssh deploy@$HOST "grep -A 10 'google/callback' /opt/PiratePlunder/backend/dist/routes/auth.js"
+          
+          echo -e "\n=== Test the OAuth redirect URL directly ==="
+          tailscale ssh deploy@$HOST "curl -I http://localhost:3001/auth/google 2>/dev/null | head -10"
