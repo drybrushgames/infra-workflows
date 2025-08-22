@@ -1,0 +1,44 @@
+name: Install npm
+
+on:
+  workflow_dispatch:
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Install npm separately
+        run: |
+          echo "=== Current Node.js and npm status ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "node --version || echo 'Node.js not found'"
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "npm --version || echo 'npm not found'"
+          
+          echo "=== Installing npm specifically ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo apt-get update && sudo apt-get install -y npm"
+          
+          echo "=== Verifying npm installation ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "npm --version && echo 'npm successfully installed'"
+          
+          echo "=== Installing PiratePlunder backend dependencies ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "cd /opt/PiratePlunder/backend && npm install --omit=dev"
+          
+          echo "=== Verifying node_modules exists ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt/PiratePlunder/backend/node_modules/ | head -5"
+          
+          echo "=== Starting PiratePlunder service ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo systemctl restart PiratePlunder.service"
+          
+          echo "=== Checking service status ==="
+          sleep 5
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "systemctl is-active PiratePlunder.service && echo 'Service is active' || echo 'Service not active'"
+          
+          echo "=== Getting recent service logs ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo journalctl -u PiratePlunder.service --since '2 minutes ago' --no-pager"
