@@ -1,0 +1,46 @@
+name: Debug Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Check deploy script exists
+        run: |
+          echo "=== Checking if deploy script exists ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt/menagerie/scripts/deploy.sh || echo 'Deploy script not found'"
+
+      - name: Check directory structure
+        run: |
+          echo "=== Checking /opt/menagerie structure ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt/menagerie/ || echo 'Directory not found'"
+
+      - name: Check if Git repo exists
+        run: |
+          echo "=== Checking if Git repo exists ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "test -d /opt/menagerie/.git && echo 'Git repo exists' || echo 'No Git repo found'"
+
+      - name: Test deploy script content
+        run: |
+          echo "=== Checking deploy script content ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "cat /opt/menagerie/scripts/deploy.sh || echo 'Cannot read deploy script'"
+
+      - name: Try manual git clone
+        run: |
+          echo "=== Testing manual git clone ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "cd /opt/menagerie && git clone https://github.com/drybrushgames/menagerie.git . || echo 'Git clone failed'"
+
+      - name: Check current directory after clone
+        run: |
+          echo "=== Checking directory after clone ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "ls -la /opt/menagerie/ || echo 'Cannot list directory'"
