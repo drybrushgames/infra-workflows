@@ -24,10 +24,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Tailscale up
-        run: |
-          echo "Skipping Tailscale for testing - would normally connect with:"
-          echo "Client ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}"
-          echo "Secret: [REDACTED]"
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          stable
 
       - name: Derive inputs
         id: derive
@@ -42,24 +44,23 @@ jobs:
 
       - name: Create directories
         run: |
-          echo "Would create directories on ${{ inputs.host }}:"
-          echo "sudo mkdir -p /opt/${{ steps.derive.outputs.name }}/{run,logs,scripts}"
-          echo "sudo chown -R deploy:deploy /opt/${{ steps.derive.outputs.name }}"
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+            "sudo mkdir -p /opt/${{ steps.derive.outputs.name }}/{run,logs,scripts} && sudo chown -R deploy:deploy /opt/${{ steps.derive.outputs.name }}"
 
       - name: Create database
         run: |
-          echo "Would run on ${{ inputs.host }}:" \
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "sudo -u postgres createdb ${{ steps.derive.outputs.name }} || true"
-          echo "Would run on ${{ inputs.host }}:" \
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "sudo -u postgres psql -c \"GRANT ALL PRIVILEGES ON DATABASE \\\"${{ steps.derive.outputs.name }}\\\" TO svc;\" || true"
 
       - name: Create .env file
         run: |
-          echo "Would run on ${{ inputs.host }}:" \
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "test -f /opt/${{ steps.derive.outputs.name }}/.env || echo 'DATABASE_URL=postgres://svc:${{ secrets.SVC_DB_PASSWORD }}@localhost:5432/${{ steps.derive.outputs.name }}?sslmode=disable
           NODE_ENV=production
           PORT=${{ inputs.port }}' | sudo tee /opt/${{ steps.derive.outputs.name }}/.env > /dev/null"
-          echo "Would run on ${{ inputs.host }}:" \
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "sudo chown deploy:deploy /opt/${{ steps.derive.outputs.name }}/.env && sudo chmod 600 /opt/${{ steps.derive.outputs.name }}/.env"
 
       - name: Create systemd service
@@ -80,7 +81,7 @@ jobs:
               ;;
           esac
           
-          echo "Would run on ${{ inputs.host }}:" \
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "echo '[Unit]
           Description=${{ steps.derive.outputs.name }}
           After=network.target
@@ -95,7 +96,7 @@ jobs:
           [Install]
           WantedBy=multi-user.target' | sudo tee /etc/systemd/system/${{ steps.derive.outputs.name }}.service"
           
-          echo "Would run on ${{ inputs.host }}:" \
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "sudo systemctl daemon-reload && sudo systemctl enable ${{ steps.derive.outputs.name }}.service"
 
       - name: Create deploy script
@@ -123,8 +124,8 @@ jobs:
           sudo systemctl restart ${SERVICE}.service || true
           echo "Deploy OK for $SERVICE"' > deploy_script.sh
           
-          echo "Would copy deploy_script.sh to ${{ inputs.host }}:/opt/${{ steps.derive.outputs.name }}/scripts/deploy.sh"
-          echo "Would run on ${{ inputs.host }}:" \
+          scp -o StrictHostKeyChecking=no deploy_script.sh deploy@${{ inputs.host }}:/opt/${{ steps.derive.outputs.name }}/scripts/deploy.sh
+          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
             "chmod +x /opt/${{ steps.derive.outputs.name }}/scripts/deploy.sh"
           rm deploy_script.sh
 
