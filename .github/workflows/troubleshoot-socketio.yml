@@ -1,0 +1,48 @@
+name: Troubleshoot Socket.io Connection
+
+on:
+  workflow_dispatch:
+
+jobs:
+  troubleshoot-socketio:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Test Socket.io and frontend connection
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Test Socket.io endpoint ==="
+          tailscale ssh deploy@$HOST "curl -v http://localhost:3001/socket.io/ 2>&1" || echo "Socket.io endpoint failed"
+          
+          echo -e "\n=== Test frontend static files ==="
+          tailscale ssh deploy@$HOST "curl -I http://localhost:3001/ 2>&1 | head -10"
+          
+          echo -e "\n=== Check if backend is serving frontend ==="
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/ | grep -o '<title>.*</title>'"
+          
+          echo -e "\n=== Test Socket.io handshake ==="
+          tailscale ssh deploy@$HOST "curl -s 'http://localhost:3001/socket.io/?EIO=4&transport=polling' | head -1"
+          
+          echo -e "\n=== Check server logs for Socket.io errors ==="
+          tailscale ssh deploy@$HOST "sudo journalctl -u PiratePlunder.service --since '5 minutes ago' | grep -i socket || echo 'No socket logs'"
+          
+          echo -e "\n=== Check server logs for connection errors ==="
+          tailscale ssh deploy@$HOST "sudo journalctl -u PiratePlunder.service --since '5 minutes ago' | grep -i 'error\|fail\|disconnect' || echo 'No error logs'"
+          
+          echo -e "\n=== Test API endpoints that frontend might call ==="
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/api/health"
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/auth/user | head -3"
+          
+          echo -e "\n=== Check node process and memory ==="
+          tailscale ssh deploy@$HOST "ps aux | grep node | grep -v grep"
+          
+          echo -e "\n=== Check for CORS or other errors in application logs ==="
+          tailscale ssh deploy@$HOST "tail -20 /opt/PiratePlunder/logs/error.log 2>/dev/null || echo 'No error log file'"
