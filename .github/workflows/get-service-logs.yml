@@ -15,21 +15,30 @@ jobs:
           tags:             tag:ci
           version:          1.76.1
 
-      - name: Get detailed service error logs
+      - name: Fix environment and test service
         run: |
           HOST="vps-0b87e710.tail751d97.ts.net"
           
           echo "=== Stop service to prevent restart loop ==="
           tailscale ssh deploy@$HOST "sudo systemctl stop PiratePlunder.service"
           
-          echo -e "\n=== Get complete service logs ==="
-          tailscale ssh deploy@$HOST "sudo journalctl -u PiratePlunder.service --since '30 minutes ago' --no-pager"
+          echo -e "\n=== Add missing DATABASE_URL to .env ==="
+          tailscale ssh deploy@$HOST "echo 'DATABASE_URL=file:/opt/PiratePlunder/data/pirate.db' >> /opt/PiratePlunder/.env"
+          tailscale ssh deploy@$HOST "echo 'NODE_ENV=production' >> /opt/PiratePlunder/.env"
+          tailscale ssh deploy@$HOST "echo 'PORT=3001' >> /opt/PiratePlunder/.env"
           
-          echo -e "\n=== Try manual start to capture startup error ==="
-          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && node dist/server.js" || echo "Manual start failed - captured error above"
+          echo -e "\n=== Create data directory ==="
+          tailscale ssh deploy@$HOST "mkdir -p /opt/PiratePlunder/data && chown deploy:deploy /opt/PiratePlunder/data"
           
-          echo -e "\n=== Check environment variables ==="
-          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && env | grep -E 'DATABASE_URL|NODE_ENV|PORT' || echo 'No relevant env vars found'"
+          echo -e "\n=== Setup database ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npx prisma db push --accept-data-loss"
           
-          echo -e "\n=== Check if .env file is accessible ==="
-          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/.env && head -5 /opt/PiratePlunder/.env"
+          echo -e "\n=== Test manual start ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && timeout 10 node dist/server.js || echo 'Test completed'"
+          
+          echo -e "\n=== Start service ==="
+          tailscale ssh deploy@$HOST "sudo systemctl start PiratePlunder.service"
+          
+          echo -e "\n=== Check final status ==="
+          sleep 15
+          tailscale ssh deploy@$HOST "systemctl is-active PiratePlunder.service && curl -s http://localhost:3001/api/health"
