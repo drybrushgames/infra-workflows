@@ -40,7 +40,7 @@ jobs:
 
       - name: Deploy over SSH
         run: |
-          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+          tailscale ssh deploy@${{ inputs.host }} \
             "bash -lc 'cd ${{ steps.derive.outputs.path }} && ./scripts/deploy.sh'"
 
       - name: Debug Service Status
@@ -49,10 +49,10 @@ jobs:
         run: |
           SERVICE="${{ steps.derive.outputs.service }}"
           echo "=== Checking service status ==="
-          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+          tailscale ssh deploy@${{ inputs.host }} \
             "sudo systemctl status ${SERVICE}.service || echo 'Could not get service status'"
           echo -e "\n=== Basic service check ==="
-          ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+          tailscale ssh deploy@${{ inputs.host }} \
             "systemctl is-active ${SERVICE}.service || echo 'Service not active'"
 
       - name: Health Check
@@ -91,13 +91,13 @@ jobs:
           echo "Getting service logs for Discord notification..."
           
           # Get service status and logs
-          STATUS=$(ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+          STATUS=$(tailscale ssh deploy@${{ inputs.host }} \
             "sudo systemctl status ${SERVICE}.service --no-pager -l 2>/dev/null || echo 'Service status check failed'")
-          LOGS=$(ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+          LOGS=$(tailscale ssh deploy@${{ inputs.host }} \
             "sudo journalctl -u ${SERVICE}.service --since '5 minutes ago' --no-pager 2>/dev/null || echo 'Could not get journalctl logs'")
           
           # Also try to get application logs if they exist
-          APP_LOGS=$(ssh -o StrictHostKeyChecking=no deploy@${{ inputs.host }} \
+          APP_LOGS=$(tailscale ssh deploy@${{ inputs.host }} \
             "ls -la ${{ steps.derive.outputs.path }}/logs/ 2>/dev/null && tail -10 ${{ steps.derive.outputs.path }}/logs/*.log 2>/dev/null || echo 'No app logs found'")
           
           # Truncate commit message to first 120 characters
