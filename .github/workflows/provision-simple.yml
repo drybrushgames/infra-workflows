@@ -110,7 +110,16 @@ jobs:
           REPO=\"${{ steps.derive.outputs.repo }}\"
           
           if [ ! -d \"\$ROOT/.git\" ]; then
-            git clone \"\$REPO\" \"\$ROOT\"
+            # If directory is not empty, initialize git and add remote
+            if [ \"\$(ls -A \$ROOT)\" ]; then
+              cd \"\$ROOT\"
+              git init
+              git remote add origin \"\$REPO\"
+              git fetch --all
+              git reset --hard origin/main
+            else
+              git clone \"\$REPO\" \"\$ROOT\"
+            fi
           fi
           
           cd \"\$ROOT\"
