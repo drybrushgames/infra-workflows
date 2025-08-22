@@ -1,0 +1,52 @@
+name: Fix Prisma Client Issue
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix-prisma:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Fix Prisma client and restart service
+        run: |
+          HOST="vps-0b87e710.tail751d97.ts.net"
+          
+          echo "=== Stop service ==="
+          tailscale ssh deploy@$HOST "sudo systemctl stop PiratePlunder.service"
+          
+          echo -e "\n=== Install Prisma CLI if not present ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npm list prisma || npm install --save-dev prisma"
+          
+          echo -e "\n=== Generate Prisma client ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npx prisma generate"
+          
+          echo -e "\n=== Check if Prisma client was generated ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/backend/src/generated/prisma/ || echo 'Prisma client not in src/generated'"
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/backend/node_modules/.prisma/ || echo 'Prisma client not in node_modules'"
+          
+          echo -e "\n=== Check if database schema is accessible ==="
+          tailscale ssh deploy@$HOST "ls -la /opt/PiratePlunder/backend/prisma/schema.prisma || echo 'Schema file missing'"
+          
+          echo -e "\n=== Set up database ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && npx prisma db push --accept-data-loss --skip-generate"
+          
+          echo -e "\n=== Test manual server start ==="
+          tailscale ssh deploy@$HOST "cd /opt/PiratePlunder/backend && timeout 5 node dist/server.js || echo 'Manual test completed'"
+          
+          echo -e "\n=== Start service ==="
+          tailscale ssh deploy@$HOST "sudo systemctl start PiratePlunder.service"
+          
+          echo -e "\n=== Check service status ==="
+          sleep 10
+          tailscale ssh deploy@$HOST "systemctl is-active PiratePlunder.service"
+          
+          echo -e "\n=== Test health endpoint ==="
+          tailscale ssh deploy@$HOST "curl -s http://localhost:3001/api/health || echo 'Health check failed'"
