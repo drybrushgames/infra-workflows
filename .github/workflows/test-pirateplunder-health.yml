@@ -1,0 +1,27 @@
+name: Test PiratePlunder Health
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tailscale up
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id:  ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret:     ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          tags:             tag:ci
+          version:          1.76.1
+
+      - name: Test health check and service status
+        run: |
+          echo "=== Service status ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "systemctl is-active PiratePlunder.service"
+          
+          echo "=== Service logs ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "sudo journalctl -u PiratePlunder.service --since '5 minutes ago' --no-pager"
+          
+          echo "=== Health check test ==="
+          tailscale ssh deploy@vps-0b87e710.tail751d97.ts.net "curl -fsS http://localhost:3001/health || echo 'Health endpoint not available yet'"
