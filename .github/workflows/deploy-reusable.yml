@@ -40,9 +40,9 @@ jobs:
 
       - name: Deploy code to server
         run: |
-          # Create a tar archive excluding source dirs, but keep pre-built backend/dist
-          # This prevents overwriting pre-built assets that have correct version info
-          tar --exclude='.git' --exclude='node_modules' --exclude='frontend/node_modules' --exclude='backend/node_modules' --exclude='frontend/src' -czf - . | \
+          # Create a tar archive excluding all frontend source to preserve pre-built backend/dist assets
+          # This prevents any rebuilds that would generate incorrect version.ts without git history
+          tar --exclude='.git' --exclude='node_modules' --exclude='frontend' -czf - . | \
           tailscale ssh deploy@${{ inputs.host }} \
             "cd ${{ steps.derive.outputs.path }} && \
              tar -xzf - && \
