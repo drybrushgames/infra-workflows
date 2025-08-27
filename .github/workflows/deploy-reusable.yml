@@ -40,16 +40,17 @@ jobs:
 
       - name: Deploy code to server
         run: |
-          # Create a tar archive excluding all frontend source to preserve pre-built backend/dist assets
-          # This prevents any rebuilds that would generate incorrect version.ts without git history
-          tar --exclude='.git' --exclude='node_modules' --exclude='frontend' -czf - . | \
+          # Create a tar archive of the code (excluding .git and node_modules for efficiency)
+          tar --exclude='.git' --exclude='node_modules' --exclude='frontend/node_modules' --exclude='backend/node_modules' -czf - . | \
           tailscale ssh deploy@${{ inputs.host }} \
             "cd ${{ steps.derive.outputs.path }} && \
              tar -xzf - && \
              SERVICE_NAME=\"${{ steps.derive.outputs.service }}\" && \
              if [ \"$SERVICE_NAME\" = \"PiratePlunder\" ]; then \
                echo \"Installing PiratePlunder backend dependencies...\" && \
-               cd backend && (command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev) && cd .. ; \
+               cd backend && (command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev) && cd .. && \
+               echo \"Ensuring pre-built assets are used...\" && \
+               rm -rf frontend/src/version.ts 2>/dev/null || true ; \
              elif [ -f package.json ]; then \
                command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev ; \
              fi && \
