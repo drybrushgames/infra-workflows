@@ -40,9 +40,9 @@ jobs:
 
       - name: Deploy code to server
         run: |
-          # Create a tar archive of the code (excluding .git and node_modules for efficiency) 
-          # For PiratePlunder, include pre-built assets from local build
-          tar --exclude='.git' --exclude='node_modules' --exclude='frontend/node_modules' --exclude='backend/node_modules' -czf - . | \
+          # Create a tar archive excluding source dirs, but keep pre-built backend/dist
+          # This prevents overwriting pre-built assets that have correct version info
+          tar --exclude='.git' --exclude='node_modules' --exclude='frontend/node_modules' --exclude='backend/node_modules' --exclude='frontend/src' -czf - . | \
           tailscale ssh deploy@${{ inputs.host }} \
             "cd ${{ steps.derive.outputs.path }} && \
              tar -xzf - && \
