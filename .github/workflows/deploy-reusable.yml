@@ -40,12 +40,12 @@ jobs:
 
       - name: Deploy code to server
         run: |
-          # Create a tar archive of the code (excluding .git and node_modules for efficiency)
-          tar --exclude='.git' --exclude='node_modules' -czf - . | \
+          # Create a tar archive of the code (excluding .git and node_modules for efficiency) 
+          # For PiratePlunder, include pre-built assets from local build
+          tar --exclude='.git' --exclude='node_modules' --exclude='frontend/node_modules' --exclude='backend/node_modules' -czf - . | \
           tailscale ssh deploy@${{ inputs.host }} \
             "cd ${{ steps.derive.outputs.path }} && \
              tar -xzf - && \
-             make build || true && \
              SERVICE_NAME=\"${{ steps.derive.outputs.service }}\" && \
              if [ \"$SERVICE_NAME\" = \"PiratePlunder\" ]; then \
                echo \"Installing PiratePlunder backend dependencies...\" && \
