@@ -49,8 +49,7 @@ jobs:
              if [ \"$SERVICE_NAME\" = \"PiratePlunder\" ]; then \
                echo \"Installing PiratePlunder backend dependencies...\" && \
                cd backend && (command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev) && cd .. && \
-               echo \"Ensuring pre-built assets are used...\" && \
-               rm -rf frontend/src/version.ts 2>/dev/null || true ; \
+               echo \"Preserving pre-built frontend assets with correct version...\" ; \
              elif [ -f package.json ]; then \
                command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev ; \
              fi && \
