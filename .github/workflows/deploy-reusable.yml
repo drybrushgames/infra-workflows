@@ -47,9 +47,9 @@ jobs:
              tar -xzf - && \
              SERVICE_NAME=\"${{ steps.derive.outputs.service }}\" && \
              if [ \"$SERVICE_NAME\" = \"PiratePlunder\" ]; then \
-               echo \"Installing PiratePlunder backend dependencies...\" && \
-               cd backend && (command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev) && cd .. && \
-               echo \"Preserving pre-built frontend assets with correct version...\" ; \
+               echo \"Building PiratePlunder frontend and backend...\" && \
+               make build && \
+               echo \"PiratePlunder build completed successfully\" ; \
              elif [ -f package.json ]; then \
                command -v pnpm >/dev/null 2>&1 && pnpm i --prod || npm ci --omit=dev || npm i --omit=dev ; \
              fi && \
