@@ -79,7 +79,16 @@ jobs:
               curl -fsS "http://${{ inputs.host }}:8080/health" || echo "Health check failed"
               ;;
             "pirateplunder"|"PiratePlunder") 
-              curl -fsS "http://${{ inputs.host }}:3001/health" || echo "Health check failed"
+              echo "=== Backend Health Check ==="
+              curl -fsS "http://${{ inputs.host }}:3001/health" || echo "Backend health check failed"
+              echo -e "\n=== Frontend Health Check ==="
+              FRONTEND_RESULT=$(curl -s "http://${{ inputs.host }}:3001/health/frontend" 2>/dev/null || echo '{"status":"failed"}')
+              echo "$FRONTEND_RESULT"
+              if echo "$FRONTEND_RESULT" | grep -q '"status":"healthy"'; then
+                echo "✅ Frontend assets deployed successfully"
+              else
+                echo "⚠️ Frontend deployment may have issues - check logs"
+              fi
               ;;
             "quietpm")
               curl -fsS "http://${{ inputs.host }}:8000/health" || echo "Health check failed"
